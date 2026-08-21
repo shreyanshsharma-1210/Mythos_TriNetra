@@ -1,8 +1,14 @@
 package com.trustmesh.app.interaction
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.CallLog
+import android.provider.ContactsContract
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.trustmesh.app.core.events.EventType
+import com.trustmesh.app.core.events.RiskLevel
 import com.trustmesh.app.core.events.SecurityEvent
 import com.trustmesh.app.core.identity.CompositeCallerIdentityResolver
 import com.trustmesh.app.core.identity.LocalContactIdentityResolver
@@ -53,6 +59,9 @@ object InteractionManager {
     private val _interactions = MutableStateFlow<List<Interaction>>(emptyList())
     val interactions: StateFlow<List<Interaction>> = _interactions.asStateFlow()
 
+    private val _contacts = MutableStateFlow<List<Pair<String, String>>>(emptyList())
+    val contacts: StateFlow<List<Pair<String, String>>> = _contacts.asStateFlow()
+
     private var repository: RoomEventRepository? = null
 
     // SupervisorJob: one failed child coroutine does not cancel siblings
@@ -101,6 +110,10 @@ object InteractionManager {
                 } catch (e: Exception) {
                     Log.e(TAG, "Room hydration failed — starting with empty list", e)
                 }
+
+                // Load real call logs and contacts immediately if permissions are granted
+                loadRealCallLogs(appContext)
+                loadRealContacts(appContext)
             }
 
             Log.i(TAG, "Initialized successfully")
@@ -361,12 +374,178 @@ object InteractionManager {
         synchronized(lock) {
             _interactions.value = emptyList()
         }
+        _contacts.value = emptyList()
         initialized = false   // Allow re-init in next test
         scope.launch {
             try {
                 repository?.clearForTesting()
             } catch (e: Exception) {
                 Log.e(TAG, "clearForTesting failed", e)
+            }
+        }
+    }
+
+    fun loadRealCallLogs(context: Context) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "READ_CALL_LOG permission not granted — cannot load real call logs")
+            return
+        }
+
+        scope.launch {
+            try {
+                val resolvedCalls = mutableListOf<Interaction>()
+                val contentResolver = context.contentResolver
+                
+                val projection = arrayOf(
+                    CallLog.Calls._ID,
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.CACHED_NAME
+                )
+                
+                val cursor = contentResolver.query(
+                    CallLog.Calls.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    "${CallLog.Calls.DATE} DESC LIMIT 50"
+                )
+
+                cursor?.use { c ->
+                    val numberIdx = c.getColumnIndex(CallLog.Calls.NUMBER)
+                    val dateIdx = c.getColumnIndex(CallLog.Calls.DATE)
+                    val typeIdx = c.getColumnIndex(CallLog.Calls.TYPE)
+                    val nameIdx = c.getColumnIndex(CallLog.Calls.CACHED_NAME)
+
+                    while (c.moveToNext()) {
+                        val number = if (numberIdx >= 0) c.getString(numberIdx) else "Unknown Caller"
+                        val dateMs = if (dateIdx >= 0) c.getLong(dateIdx) else System.currentTimeMillis()
+                        val type = if (typeIdx >= 0) c.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
+                        val cachedName = if (nameIdx >= 0) c.getString(nameIdx) else null
+
+                        val typeStr = when (type) {
+                            CallLog.Calls.INCOMING_TYPE -> "Incoming call"
+                            CallLog.Calls.OUTGOING_TYPE -> "Outgoing call"
+                            CallLog.Calls.MISSED_TYPE -> "Missed call"
+                            CallLog.Calls.VOICEMAIL_TYPE -> "Voicemail"
+                            CallLog.Calls.REJECTED_TYPE -> "Rejected call"
+                            CallLog.Calls.BLOCKED_TYPE -> "Blocked call"
+                            else -> "Call"
+                        }
+
+                        val timeString = timeFormat.format(Date(dateMs))
+                        val id = "calllog_${dateMs}_${number.hashCode()}"
+                        
+                        val identity = if (!cachedName.isNullOrBlank()) {
+                            com.trustmesh.app.core.identity.CallerIdentity(
+                                phoneNumber = number,
+                                displayName = cachedName,
+                                identityType = com.trustmesh.app.core.identity.IdentityType.PERSON,
+                                confidence = com.trustmesh.app.core.identity.Confidence.HIGH,
+                                source = com.trustmesh.app.core.identity.IdentitySource.LOCAL_CONTACT,
+                                isKnown = true
+                            )
+                        } else {
+                            com.trustmesh.app.core.identity.CallerIdentity(
+                                phoneNumber = number,
+                                displayName = null,
+                                identityType = com.trustmesh.app.core.identity.IdentityType.UNKNOWN,
+                                confidence = com.trustmesh.app.core.identity.Confidence.NONE,
+                                source = com.trustmesh.app.core.identity.IdentitySource.UNKNOWN,
+                                isKnown = false
+                            )
+                        }
+
+                        val isKnown = identity.isKnown
+                        val riskLevel = if (isKnown) RiskLevel.LOW else RiskLevel.ELEVATED
+
+                        val interaction = Interaction(
+                            id = id,
+                            title = cachedName ?: number,
+                            timestamp = timeString,
+                            timestampMs = dateMs,
+                            riskLevel = riskLevel,
+                            summary = "$typeStr observed in device logs",
+                            evidence = listOf(typeStr, if (isKnown) "Known contact" else "Unknown caller"),
+                            timeline = listOf(
+                                "$timeString - $typeStr detected",
+                                "$timeString - Logged in device history"
+                            ),
+                            appName = "Phone",
+                            callerIdentity = identity
+                        )
+                        resolvedCalls.add(interaction)
+                    }
+                }
+
+                synchronized(lock) {
+                    val currentList = _interactions.value.toMutableList()
+                    val filteredNewCalls = resolvedCalls.filter { newCall ->
+                        currentList.none { existing -> 
+                            existing.id == newCall.id || 
+                            (existing.appName == "Phone" && Math.abs(existing.timestampMs - newCall.timestampMs) < 2000)
+                        }
+                    }
+
+                    if (filteredNewCalls.isNotEmpty()) {
+                        val merged = (currentList + filteredNewCalls).sortedByDescending { it.timestampMs }
+                        _interactions.value = merged
+                        Log.i(TAG, "Merged ${filteredNewCalls.size} real calls from device call log")
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG, "SecurityException: READ_CALL_LOG permission not granted or revoked dynamically", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load real call logs from device", e)
+            }
+        }
+    }
+
+    fun loadRealContacts(context: Context) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "READ_CONTACTS permission not granted — cannot load real contacts")
+            return
+        }
+
+        scope.launch {
+            try {
+                val resolvedContacts = mutableListOf<Pair<String, String>>()
+                val contentResolver = context.contentResolver
+                
+                val projection = arrayOf(
+                    ContactsContract.Contacts.DISPLAY_NAME,
+                    ContactsContract.Contacts.HAS_PHONE_NUMBER
+                )
+                
+                val cursor = contentResolver.query(
+                    ContactsContract.Contacts.CONTENT_URI,
+                    projection,
+                    null,
+                    null,
+                    "${ContactsContract.Contacts.DISPLAY_NAME} ASC"
+                )
+
+                cursor?.use { c ->
+                    val nameIdx = c.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                    val hasPhoneIdx = c.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER)
+
+                    while (c.moveToNext()) {
+                        val name = if (nameIdx >= 0) c.getString(nameIdx) else null
+                        val hasPhone = if (hasPhoneIdx >= 0) c.getInt(hasPhoneIdx) else 0
+
+                        if (!name.isNullOrBlank() && hasPhone > 0) {
+                            resolvedContacts.add(Pair(name, "Safe contact · Verified locally"))
+                        }
+                    }
+                }
+
+                _contacts.value = resolvedContacts
+                Log.i(TAG, "Loaded ${resolvedContacts.size} real contacts from device")
+            } catch (e: SecurityException) {
+                Log.e(TAG, "SecurityException: READ_CONTACTS permission not granted or revoked dynamically", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load real contacts from device", e)
             }
         }
     }

@@ -1,51 +1,152 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.trustmesh.app.ui.screens.onboarding
 
+import android.app.Activity
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
-import com.trustmesh.app.ui.theme.*
+import androidx.core.view.WindowCompat
+import com.trustmesh.app.ui.theme.OnboardingBackground
 
+/**
+ * Root onboarding screen.
+ *
+ * Hosts all 6 pages with:
+ *  • Edge-to-edge warm background
+ *  • Premium HorizontalPager with interactive parallax transitions
+ *  • Dynamic Top metadata + progress indicator
+ *  • Animated Button Micro-interactions
+ *  • Legible system status/navigation icons for light themes
+ */
 @Composable
 fun OnboardingScreen(onFinish: () -> Unit) {
-    val step = remember { mutableStateOf(0) }
-    val steps = listOf(
-        Pair("Meet TrustMesh", "Security intelligence for everyday interactions."),
-        Pair("TrustMesh doesn't listen.", "TrustMesh does not record or analyze call audio."),
-        Pair("Notification Monitoring", "TrustMesh can observe notifications posted by apps on your device to understand security context.\n\nTrustMesh does not send notification content to a cloud service.\nNotification access is controlled by Android and can be disabled at any time."),
-        Pair("TrustMesh watches for context.", "Calls, notifications, app activity and other available security signals are correlated to identify risky interactions."),
-        Pair("Protection when it matters.", "TrustMesh stays quiet when everything looks normal and becomes more visible when risk increases."),
-        Pair("Set up protection", "Begin capability setup.")
-    )
-    
-    Column(
+    val pages = onboardingPages
+    var currentIndex by remember { mutableIntStateOf(0) }
+
+    // Configure system status bars dynamically for the light onboarding theme
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = true
+                    isAppearanceLightNavigationBars = true
+                }
+            }
+        }
+    }
+
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+
+    // Sync button next / back navigation with pagerState
+    LaunchedEffect(currentIndex) {
+        if (pagerState.currentPage != currentIndex) {
+            pagerState.animateScrollToPage(
+                page = currentIndex,
+                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+            )
+        }
+    }
+
+    // Sync manual swipes with currentIndex
+    LaunchedEffect(pagerState.currentPage) {
+        currentIndex = pagerState.currentPage
+    }
+
+    // Back press goes to previous page
+    BackHandler(enabled = currentIndex > 0) {
+        currentIndex--
+    }
+
+    fun navigateNext() {
+        if (currentIndex < pages.lastIndex) {
+            currentIndex++
+        } else {
+            onFinish()
+        }
+    }
+
+    fun navigateSkip() {
+        onFinish()
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(TrustMeshBackground)
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .background(OnboardingBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
-        val currentStep = steps[step.value]
-        Text(currentStep.first, style = Typography.titleLarge, color = SecurityAccent)
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(currentStep.second, style = Typography.bodyLarge, color = TextPrimary)
-        
-        Spacer(modifier = Modifier.height(64.dp))
-        Button(
-            onClick = {
-                if (step.value < steps.size - 1) step.value++ else onFinish()
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = SecurityAccent, contentColor = TrustMeshBackground)
-        ) {
-            Text(if (step.value < steps.size - 1) "Next" else "Finish Setup")
+        Column(modifier = Modifier.fillMaxSize()) {
+
+            // ── Top chrome: meta + progress ──────────────────────────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 20.dp)
+            ) {
+                TrinetraTopMeta(
+                    currentStep = currentIndex + 1,
+                    totalSteps = pages.size,
+                    onSkip = ::navigateSkip,
+                    showSkip = currentIndex < pages.lastIndex
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                TrinetraProgressIndicator(
+                    currentStep = currentIndex + 1,
+                    totalSteps = pages.size
+                )
+            }
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // ── Interactive HorizontalPager with Parallax ──────────────────
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                userScrollEnabled = true
+            ) { pageIndex ->
+                // Calculate pageOffset relative to viewport: pageIndex - scrollPosition
+                val pageOffset = pageIndex - (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+                
+                OnboardingPage(
+                    page = pages[pageIndex],
+                    pageOffset = pageOffset,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // ── Bottom button ─────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                val currentPage = pages[currentIndex]
+                TrinetraPrimaryButton(
+                    label = currentPage.buttonLabel,
+                    onClick = ::navigateNext,
+                    isWide = currentPage.isLastPage
+                )
+            }
         }
     }
 }

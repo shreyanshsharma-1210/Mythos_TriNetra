@@ -1,5 +1,9 @@
 package com.trustmesh.app.ui.screens.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.os.Build
 import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -59,6 +63,31 @@ fun SettingsScreen() {
     var isNotificationAccessGranted by remember { mutableStateOf(NotificationAccessHelper.isNotificationAccessGranted(context)) }
     var isOverlayPermissionGranted by remember { mutableStateOf(OverlayPermissionHelper.hasOverlayPermission(context)) }
 
+    var isContactsPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var isCallLogPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var isPhoneStatePermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var isPostNotificationsPermissionGranted by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
     val db = remember { TrustMeshDatabase.getDatabase(context) }
     val policyRepository = remember { ProtectionPolicyRepository(db.protectionPolicyDao(), db.trustedCallerDao()) }
 
@@ -74,6 +103,23 @@ fun SettingsScreen() {
                 isCallScreeningActive = RoleManagerHelper.isCallScreeningRoleGranted(context)
                 isNotificationAccessGranted = NotificationAccessHelper.isNotificationAccessGranted(context)
                 isOverlayPermissionGranted = OverlayPermissionHelper.hasOverlayPermission(context)
+                
+                val wasContactsGranted = isContactsPermissionGranted
+                val wasCallLogGranted = isCallLogPermissionGranted
+                
+                isContactsPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                isCallLogPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+                isPhoneStatePermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    isPostNotificationsPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                }
+                
+                if (isCallLogPermissionGranted && !wasCallLogGranted) {
+                    com.trustmesh.app.interaction.InteractionManager.loadRealCallLogs(context)
+                }
+                if (isContactsPermissionGranted && !wasContactsGranted) {
+                    com.trustmesh.app.interaction.InteractionManager.loadRealContacts(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -85,6 +131,27 @@ fun SettingsScreen() {
     }
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         isNotificationAccessGranted = NotificationAccessHelper.isNotificationAccessGranted(context)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val newContactsGranted = permissions[Manifest.permission.READ_CONTACTS] ?: isContactsPermissionGranted
+        val newCallLogGranted = permissions[Manifest.permission.READ_CALL_LOG] ?: isCallLogPermissionGranted
+        
+        if (newCallLogGranted && !isCallLogPermissionGranted) {
+            com.trustmesh.app.interaction.InteractionManager.loadRealCallLogs(context)
+        }
+        if (newContactsGranted && !isContactsPermissionGranted) {
+            com.trustmesh.app.interaction.InteractionManager.loadRealContacts(context)
+        }
+        
+        isContactsPermissionGranted = newContactsGranted
+        isCallLogPermissionGranted = newCallLogGranted
+        isPhoneStatePermissionGranted = permissions[Manifest.permission.READ_PHONE_STATE] ?: isPhoneStatePermissionGranted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            isPostNotificationsPermissionGranted = permissions[Manifest.permission.POST_NOTIFICATIONS] ?: isPostNotificationsPermissionGranted
+        }
     }
 
     if (showTrustedCallersDialog) {
@@ -233,6 +300,52 @@ fun SettingsScreen() {
                             }
                         }
                     )
+                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    PermissionRow(
+                        label = "Contacts Access",
+                        description = "Resolve contact names for incoming calls",
+                        granted = isContactsPermissionGranted,
+                        onClick = {
+                            if (!isContactsPermissionGranted) {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+                            }
+                        }
+                    )
+                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    PermissionRow(
+                        label = "Call Logs Access",
+                        description = "Read call logs to identify spam call history",
+                        granted = isCallLogPermissionGranted,
+                        onClick = {
+                            if (!isCallLogPermissionGranted) {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.WRITE_CALL_LOG))
+                            }
+                        }
+                    )
+                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    PermissionRow(
+                        label = "Phone State Access",
+                        description = "Detect calls and read phone numbers",
+                        granted = isPhoneStatePermissionGranted,
+                        onClick = {
+                            if (!isPhoneStatePermissionGranted) {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.READ_PHONE_STATE))
+                            }
+                        }
+                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                        PermissionRow(
+                            label = "Post Notifications",
+                            description = "Notify about risk updates and caller info",
+                            granted = isPostNotificationsPermissionGranted,
+                            onClick = {
+                                if (!isPostNotificationsPermissionGranted) {
+                                    permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                                }
+                            }
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(20.dp))

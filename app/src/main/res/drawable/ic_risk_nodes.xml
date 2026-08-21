@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="260dp"
+    android:height="225dp"
+    android:viewportWidth="600"
+    android:viewportHeight="520">
+
+    <!-- Central white ring -->
+    <path
+        android:pathData="M242,260 a58,58 0 1,1 116,0 a58,58 0 1,1 -116,0"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#D8DEFF"
+        android:strokeWidth="4"/>
+
+    <!-- Central blue dot -->
+    <path
+        android:pathData="M270,260 a30,30 0 1,1 60,0 a30,30 0 1,1 -60,0"
+        android:fillColor="#5268E8"/>
+
+    <!-- Connector lines -->
+    <path
+        android:pathData="M300,260 L130,135"
+        android:fillColor="#00000000"
+        android:strokeColor="#B4BFFF"
+        android:strokeWidth="4"/>
+    <path
+        android:pathData="M300,260 L480,130"
+        android:fillColor="#00000000"
+        android:strokeColor="#B4BFFF"
+        android:strokeWidth="4"/>
+    <path
+        android:pathData="M300,260 L470,405"
+        android:fillColor="#00000000"
+        android:strokeColor="#B4BFFF"
+        android:strokeWidth="4"/>
+
+    <!-- Node top-left: safe (blue/neutral) -->
+    <path
+        android:pathData="M82,135 a48,48 0 1,1 96,0 a48,48 0 1,1 -96,0"
+        android:fillColor="#F4F6FF"
+        android:strokeColor="#A7B2FF"
+        android:strokeWidth="4"/>
+
+    <!-- Node top-right: uncertain (amber) -->
+    <path
+        android:pathData="M432,130 a48,48 0 1,1 96,0 a48,48 0 1,1 -96,0"
+        android:fillColor="#FFF7DE"
+        android:strokeColor="#E7B840"
+        android:strokeWidth="4"/>
+
+    <!-- Node bottom-right: risk (red) -->
+    <path
+        android:pathData="M422,405 a48,48 0 1,1 96,0 a48,48 0 1,1 -96,0"
+        android:fillColor="#FFF0F1"
+        android:strokeColor="#E26A78"
+        android:strokeWidth="4"/>
+
+    <!-- Check mark in top-left node (drawn as lines) -->
+    <path
+        android:pathData="M117,128 L127,140 L150,118"
+        android:fillColor="#00000000"
+        android:strokeColor="#5268E8"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- ! in top-right node -->
+    <path
+        android:pathData="M480,115 L480,140"
+        android:fillColor="#00000000"
+        android:strokeColor="#D99A35"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M480,150 a3,3 0 1,1 0.001,0"
+        android:fillColor="#D99A35"/>
+
+    <!-- ~ squiggly in bottom-right node (risk signal) -->
+    <path
+        android:pathData="M450,398 C458,388 467,408 476,398 C484,388 493,408 502,398"
+        android:fillColor="#00000000"
+        android:strokeColor="#D94D62"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+</vector>

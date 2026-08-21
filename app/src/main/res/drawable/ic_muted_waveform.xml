@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="280dp"
+    android:height="186dp"
+    android:viewportWidth="600"
+    android:viewportHeight="400">
+
+    <!-- Waveform path -->
+    <path
+        android:pathData="M35,205 C75,205 75,135 110,135 S145,275 180,275 215,115 250,115 285,290 320,290 355,140 390,140 425,250 460,250 495,190 535,190"
+        android:fillColor="#00000000"
+        android:strokeColor="#A8B4FF"
+        android:strokeWidth="16"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.45"/>
+
+    <!-- Diagonal mute line -->
+    <path
+        android:pathData="M105,70 L500,330"
+        android:fillColor="#00000000"
+        android:strokeColor="#18213A"
+        android:strokeWidth="16"
+        android:strokeLineCap="round"/>
+
+    <!-- Left endpoint dot -->
+    <path
+        android:pathData="M92,75 a18,18 0 1,1 36,0 a18,18 0 1,1 -36,0"
+        android:fillColor="#667DFF"/>
+
+    <!-- Right endpoint dot -->
+    <path
+        android:pathData="M482,330 a18,18 0 1,1 36,0 a18,18 0 1,1 -36,0"
+        android:fillColor="#667DFF"/>
+
+</vector>
