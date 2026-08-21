@@ -32,5 +32,10 @@ data class InteractionEntity(
     val repCategory: com.trustmesh.app.core.identity.CallerCategory?,
     val repLevel: com.trustmesh.app.core.identity.ReputationLevel?,
     val repSpamReports: Int?,
-    val repFraudReports: Int?
+    val repFraudReports: Int?,
+    
+    // Protection & Post-Call
+    val protectionDecision: String?,
+    val incidentType: com.trustmesh.app.core.incident.IncidentType?,
+    val isBlocked: Boolean
 )

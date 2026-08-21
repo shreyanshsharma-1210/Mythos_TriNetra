@@ -55,17 +55,17 @@ object ProtectionController {
     val overlayState: StateFlow<CallOverlayState> = _overlayState.asStateFlow()
 
     private var activeX = 100
-    private var activeY = 300
+    private var activeY = 150
     private var activeCallStartTimeMs = 0L
     private var activeCallDurationSeconds = 0L
     var summaryDismissDelayMs = 5000L
 
-    private val dismissHandler by lazy { Handler(Looper.getMainLooper()) }
-    private val dismissRunnable = Runnable {
-        if (_overlayState.value == CallOverlayState.SUMMARY) {
-            transitionToStateInternal(CallOverlayState.HIDDEN)
-        }
-    }
+    private val dismissHandler = Handler(Looper.getMainLooper())
+    private val dismissRunnable = Runnable { hideOverlay("summary_timeout") }
+    
+    private var lastContext: Context? = null
+    private var lastCallerName: String = ""
+    private var lastCallerNumber: String = ""
 
     private class MyLifecycleOwner : SavedStateRegistryOwner {
         private val lifecycleRegistry = LifecycleRegistry(this)
@@ -98,7 +98,15 @@ object ProtectionController {
     // ── Public API ─────────────────────────────────────────────────────────────
 
     fun showOverlay(context: Context, callerName: String, callerNumber: String) {
-        showOverlay(context, callerName, callerNumber, CallOverlayState.INCOMING)
+        enforceMainThread {
+            showOverlayInternal(context, callerName, callerNumber, CallOverlayState.INCOMING)
+        }
+    }
+
+    fun showOutgoingOverlay(context: Context, callerName: String, callerNumber: String) {
+        enforceMainThread {
+            showOverlayInternal(context, callerName, callerNumber, CallOverlayState.ACTIVE)
+        }
     }
 
     fun showOverlay(context: Context, callerName: String, callerNumber: String, initialState: CallOverlayState) {
@@ -175,6 +183,9 @@ object ProtectionController {
         Log.i(TAG, "Showing overlay for caller in state=$initialState")
 
         val appContext = context.applicationContext
+        lastContext = appContext
+        lastCallerName = callerName
+        lastCallerNumber = callerNumber
 
         try {
             val wm = appContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
@@ -192,7 +203,12 @@ object ProtectionController {
                     val activeIncident = incidents.firstOrNull { it.status == IncidentStatus.ACTIVE }
 
                     val currentInteraction = interactions.firstOrNull()
-                    val riskLevel = activeIncident?.severity ?: (currentInteraction?.riskLevel ?: RiskLevel.LOW)
+                    val isIncidentRelated = activeIncident != null && (currentInteraction == null || activeIncident.relatedInteractionIds.contains(currentInteraction.id))
+                    val riskLevel = if (isIncidentRelated) {
+                        activeIncident!!.severity
+                    } else {
+                        currentInteraction?.riskLevel ?: RiskLevel.LOW
+                    }
                     val callerIdentity = currentInteraction?.callerIdentity
                     val callerReputation = currentInteraction?.callerReputation
 
@@ -209,7 +225,7 @@ object ProtectionController {
                             fallbackNumber = callerNumber,
                             riskLevel = riskLevel,
                             riskAssessment = currentInteraction?.riskAssessment,
-                            activeIncident = activeIncident,
+                            activeIncident = if (isIncidentRelated) activeIncident else null,
                             activeCallDurationSeconds = activeCallDurationSeconds,
                             onDismiss = { hideOverlay("user_dismissed") }
                         )
@@ -273,7 +289,12 @@ object ProtectionController {
         val view = composeView
         val wm = windowManager
         if (view == null || wm == null) {
-            Log.w(TAG, "Cannot transition state — view or windowManager is null")
+            if (state == CallOverlayState.SUMMARY && lastContext != null) {
+                Log.i(TAG, "Respawning overlay for summary after manual dismissal")
+                showOverlayInternal(lastContext!!, lastCallerName, lastCallerNumber, CallOverlayState.SUMMARY)
+            } else {
+                Log.w(TAG, "Cannot transition state — view or windowManager is null")
+            }
             return
         }
 
@@ -337,7 +358,9 @@ object ProtectionController {
         }
         activeCallStartTimeMs = 0L
         activeX = 100
-        activeY = 300
+        activeY = 150
+        // We do NOT clear lastContext/lastCallerName here so that transitionToState(SUMMARY) 
+        // can respawn the UI if the user manually dismisses the ACTIVE pill.
         Log.d(TAG, "Overlay state cleaned up")
     }
 
@@ -362,12 +385,19 @@ object ProtectionController {
                     }
                 }
                 CallOverlayState.ACTIVE -> {
-                    lp.width = WindowManager.LayoutParams.WRAP_CONTENT
-                    lp.height = WindowManager.LayoutParams.WRAP_CONTENT
-                    lp.gravity = Gravity.TOP or Gravity.START
-                    lp.x = activeX
-                    lp.y = activeY
-                    lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    if (riskLevel == RiskLevel.CRITICAL || riskLevel == RiskLevel.HIGH) {
+                        lp.width = WindowManager.LayoutParams.MATCH_PARENT
+                        lp.height = WindowManager.LayoutParams.MATCH_PARENT
+                        lp.gravity = Gravity.CENTER
+                        lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL.inv()
+                    } else {
+                        lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+                        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
+                        lp.gravity = Gravity.TOP or Gravity.START
+                        lp.x = activeX
+                        lp.y = activeY
+                        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                    }
                 }
                 CallOverlayState.SUMMARY -> {
                     lp.width = WindowManager.LayoutParams.WRAP_CONTENT

@@ -43,15 +43,24 @@ object SecurityIncidentManager {
             
             var existingIncident: SecurityIncident? = null
             for (inc in currentIncidents) {
-                if (SecurityIncidentEngine.belongsToIncident(interaction, inc)) {
+                if (inc.status == IncidentStatus.ACTIVE && inc.relatedInteractionIds.contains(interaction.id)) {
+                    existingIncident = inc
+                    break
+                } else if (SecurityIncidentEngine.belongsToIncident(interaction, inc)) {
                     existingIncident = inc
                     break
                 }
             }
 
             if (existingIncident != null) {
-                val updated = SecurityIncidentEngine.updateIncident(existingIncident, interaction)
-                dao?.updateIncident(updated.toEntity())
+                val newType = SecurityIncidentEngine.determineIncidentType(interaction)
+                if (newType == null && existingIncident.relatedInteractionIds.size == 1 && existingIncident.relatedInteractionIds.contains(interaction.id)) {
+                    // False positive incident — identity likely resolved to a known contact
+                    dismissIncident(existingIncident.incidentId)
+                } else {
+                    val updated = SecurityIncidentEngine.updateIncident(existingIncident, interaction)
+                    dao?.updateIncident(updated.toEntity())
+                }
             } else {
                 val newIncident = SecurityIncidentEngine.createIncident(interaction)
                 if (newIncident != null) {

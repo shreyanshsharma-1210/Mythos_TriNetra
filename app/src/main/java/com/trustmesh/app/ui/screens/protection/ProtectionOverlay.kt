@@ -54,7 +54,13 @@ fun ProtectionOverlay(
             }
         }
         CallOverlayState.ACTIVE -> {
-            ActiveCallStatusBox(callerIdentity, fallbackNumber, riskLevel, riskAssessment, activeIncident, onDismiss)
+            if (riskLevel == RiskLevel.CRITICAL) {
+                FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, onDismiss)
+            } else if (riskLevel == RiskLevel.HIGH) {
+                FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, onDismiss)
+            } else {
+                ActiveCallStatusBox(callerIdentity, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, onDismiss)
+            }
         }
         CallOverlayState.SUMMARY -> {
             val interactions by InteractionManager.interactions.collectAsState()
@@ -70,6 +76,7 @@ fun ProtectionOverlay(
 @Composable
 fun ActiveCallStatusBox(
     callerIdentity: CallerIdentity?,
+    fallbackName: String,
     fallbackNumber: String,
     riskLevel: RiskLevel,
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
@@ -117,7 +124,7 @@ fun ActiveCallStatusBox(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
-                val identifier = callerIdentity?.displayName ?: callerIdentity?.phoneNumber ?: fallbackNumber
+                val identifier = callerIdentity?.displayName ?: fallbackName.ifBlank { callerIdentity?.phoneNumber ?: fallbackNumber }
                 if (identifier.isNotBlank()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -149,7 +156,7 @@ fun ActiveCallStatusBox(
                     )
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                val name = callerIdentity?.displayName ?: "Unknown Caller"
+                val name = callerIdentity?.displayName ?: fallbackName.ifBlank { "Unknown Caller" }
                 val num = callerIdentity?.phoneNumber ?: fallbackNumber
                 Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 if (num.isNotBlank()) {
@@ -390,10 +397,11 @@ fun CompactFloatingOverlay(
                 Text("🛡 TrustMesh", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 if (callerIdentity?.isKnown == true) {
-                    Text(callerIdentity.displayName ?: "Unknown", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" }, color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text("Known contact", color = Color.Gray, fontSize = 12.sp)
                 } else {
-                    Text("Unknown Caller", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    val title = if (fallbackName.isNotBlank()) fallbackName else "Unknown Caller"
+                    Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.Gray, fontSize = 12.sp)
                 }
                 Spacer(modifier = Modifier.height(2.dp))
@@ -445,7 +453,7 @@ fun FloatingRiskCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Text("🛡 TrustMesh", color = themeColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(modifier = Modifier.height(12.dp))
-            val title = if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: "Unknown" else "Unknown Caller"
+            val title = if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" }
             Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             if (callerIdentity?.isKnown != true) {
                 Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.LightGray, fontSize = 14.sp)
@@ -496,7 +504,7 @@ fun BottomRiskSheet(
             Spacer(modifier = Modifier.height(8.dp))
             Text(riskLevel.displayName, color = Color(0xFFEA4335), fontWeight = FontWeight.Black, fontSize = 22.sp)
             Spacer(modifier = Modifier.height(16.dp))
-            val title = if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: "Unknown" else "Unknown Caller"
+            val title = if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" }
             Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             if (callerIdentity?.isKnown != true) {
                 Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.LightGray, fontSize = 16.sp)
@@ -581,7 +589,16 @@ fun FullScreenSecurityOverlay(
                 textAlign = TextAlign.Center,
                 fontSize = 16.sp
             )
+            
             Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Active call cannot be retroactively blocked by CallScreeningService.",
+                color = Color(0xFFFBBC05), // yellow warning
+                textAlign = TextAlign.Center,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             if (activeIncident != null && activeIncident.recommendedActions.isNotEmpty()) {
                 Text("Recommended:", color = Color.Gray, fontWeight = FontWeight.Bold)
                 activeIncident.recommendedActions.forEach { action ->

@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProtectionPolicyEntity::class,
         TrustedCallerEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(TrustMeshConverters::class)
@@ -126,6 +126,13 @@ abstract class TrustMeshDatabase : RoomDatabase() {
                 """.trimIndent())
             }
         }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE interactions ADD COLUMN protectionDecision TEXT")
+                db.execSQL("ALTER TABLE interactions ADD COLUMN incidentType TEXT")
+                db.execSQL("ALTER TABLE interactions ADD COLUMN isBlocked INTEGER NOT NULL DEFAULT 0")
+            }
+        }
 
         fun getDatabase(context: Context): TrustMeshDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -134,7 +141,7 @@ abstract class TrustMeshDatabase : RoomDatabase() {
                     TrustMeshDatabase::class.java,
                     "trustmesh.db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

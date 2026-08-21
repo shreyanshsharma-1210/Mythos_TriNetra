@@ -79,7 +79,10 @@ class RoomEventRepository(private val database: TrustMeshDatabase) : EventReposi
                     callerReputation = callerReputation,
                     riskAssessment = riskAssessment,
                     evidence = detail.evidenceEntries.sortedBy { it.orderIndex }.map { it.content },
-                    timeline = detail.timelineEntries.sortedBy { it.orderIndex }.map { it.content }
+                    timeline = detail.timelineEntries.sortedBy { it.orderIndex }.map { it.content },
+                    protectionDecision = detail.interaction.protectionDecision,
+                    incidentType = detail.interaction.incidentType,
+                    isBlocked = detail.interaction.isBlocked
                 )
             }
         }
@@ -143,7 +146,10 @@ class RoomEventRepository(private val database: TrustMeshDatabase) : EventReposi
                     callerReputation = callerReputation,
                     riskAssessment = riskAssessment,
                     evidence = detail.evidenceEntries.sortedBy { it.orderIndex }.map { it.content },
-                    timeline = detail.timelineEntries.sortedBy { it.orderIndex }.map { it.content }
+                    timeline = detail.timelineEntries.sortedBy { it.orderIndex }.map { it.content },
+                    protectionDecision = detail.interaction.protectionDecision,
+                    incidentType = detail.interaction.incidentType,
+                    isBlocked = detail.interaction.isBlocked
                 )
             }
         }
@@ -180,7 +186,10 @@ class RoomEventRepository(private val database: TrustMeshDatabase) : EventReposi
                 repCategory = interaction.callerReputation?.category,
                 repLevel = interaction.callerReputation?.reputationLevel,
                 repSpamReports = interaction.callerReputation?.spamReports,
-                repFraudReports = interaction.callerReputation?.fraudReports
+                repFraudReports = interaction.callerReputation?.fraudReports,
+                protectionDecision = interaction.protectionDecision,
+                incidentType = interaction.incidentType,
+                isBlocked = interaction.isBlocked
             )
 
             val riskAssessmentEntity = interaction.riskAssessment?.let {
@@ -247,7 +256,10 @@ class RoomEventRepository(private val database: TrustMeshDatabase) : EventReposi
                 timestampMs = detail.timestampMs,
                 riskLevel = detail.riskLevel,
                 summary = detail.summary,
-                associatedKey = detail.associatedKey
+                associatedKey = detail.associatedKey,
+                protectionDecision = detail.protectionDecision,
+                incidentType = detail.incidentType,
+                isBlocked = detail.isBlocked
             )
         }
         return null

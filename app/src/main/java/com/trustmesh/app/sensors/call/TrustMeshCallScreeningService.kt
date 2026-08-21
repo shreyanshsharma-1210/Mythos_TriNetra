@@ -21,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
 
 private const val TAG = "TrustMeshCall"
 
@@ -96,7 +97,7 @@ class TrustMeshCallScreeningService : CallScreeningService() {
 
             try {
                 // 1. Extract metadata safely
-                val event = try {
+                val rawEvent = try {
                     EventNormalizer.normalizeIncomingCall(callDetails)
                 } catch (e: Exception) {
                     Log.e(TAG, "EventNormalizer failed — allowing call", e)
@@ -104,9 +105,12 @@ class TrustMeshCallScreeningService : CallScreeningService() {
                     return@launch
                 }
 
-                val phoneNumber = event.identity ?: ""
+                val phoneNumber = rawEvent.identity ?: ""
                 val maskedNumber = maskNumber(phoneNumber)
                 Log.i(TAG, "Caller metadata extracted — number=$maskedNumber")
+
+                val interactionId = rawEvent.interactionId ?: UUID.randomUUID().toString()
+                val event = rawEvent.copy(interactionId = interactionId)
 
                 // 2. Policy evaluation with timeout (2 s)
                 val policyEngine = protectionPolicyEngine
@@ -148,16 +152,25 @@ class TrustMeshCallScreeningService : CallScreeningService() {
                     null
                 }
 
-                // 3. Respond based on decision
                 val shouldBlock = decision?.action == ProtectionAction.BLOCK_CALL
-                safeRespond(disallow = shouldBlock, reason = decision?.reason ?: "no_decision")
 
-                // 4. Background processing (after responding — does not affect dialer)
+                // 4. Background processing (does not affect dialer)
                 InteractionManager.processEvent(event)
+                
+                val decisionName = decision?.action?.name ?: "MONITOR_ONLY"
+                // Extract active incident type if one was active at the time of screening
+                val activeIncident = SecurityIncidentManager.activeIncident.value
+                InteractionManager.updateProtectionOutcome(
+                    interactionId = interactionId,
+                    decision = decisionName,
+                    isBlocked = shouldBlock,
+                    incidentType = activeIncident?.incidentType
+                )
 
                 // 5. Show overlay only for allowed calls
                 if (!shouldBlock) {
-                    val callerName = event.metadata["callerName"] ?: ""
+                    val callerName = event.metadata["oemDisplayName"] ?: 
+                                     com.trustmesh.app.core.identity.LocalContactIdentityResolver.getContactNameSync(this@TrustMeshCallScreeningService, phoneNumber) ?: ""
                     withContext(Dispatchers.Main) {
                         try {
                             com.trustmesh.app.ui.screens.protection.ProtectionController.showOverlay(
@@ -170,6 +183,9 @@ class TrustMeshCallScreeningService : CallScreeningService() {
                         }
                     }
                 }
+
+                // 3. Respond based on decision
+                safeRespond(disallow = shouldBlock, reason = decision?.reason ?: "no_decision")
 
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected error in onScreenCall — allowing call", e)
@@ -184,8 +200,7 @@ class TrustMeshCallScreeningService : CallScreeningService() {
     }
 
     override fun onDestroy() {
-        Log.i(TAG, "Service destroyed — cancelling coroutine scope")
-        scope.cancel()
+        Log.i(TAG, "Service destroyed")
         super.onDestroy()
     }
 

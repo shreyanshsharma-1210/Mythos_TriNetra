@@ -266,7 +266,7 @@ object InteractionManager {
         evaluateRisk(interactionId)
 
         // ── Async identity resolution for calls ────────────────────────────
-        if (event.type == EventType.INCOMING_CALL) {
+        if (event.type == EventType.INCOMING_CALL || event.type == EventType.OUTGOING_CALL) {
             val phoneNumber = event.identity
             if (!phoneNumber.isNullOrEmpty()) {
                 Log.d("TrustMeshIdentity", "localContactIdentityResolverExecuting=true")
@@ -366,6 +366,34 @@ object InteractionManager {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "evaluateRisk failed for $interactionId", e)
+            }
+        }
+    }
+
+    fun updateProtectionOutcome(interactionId: String, decision: String, isBlocked: Boolean, incidentType: com.trustmesh.app.core.incident.IncidentType? = null) {
+        scope.launch {
+            var updated: Interaction? = null
+            synchronized(lock) {
+                val currentList = _interactions.value
+                val index = currentList.indexOfFirst { it.id == interactionId }
+                if (index != -1) {
+                    val existing = currentList[index]
+                    updated = existing.copy(
+                        protectionDecision = decision,
+                        incidentType = incidentType ?: existing.incidentType,
+                        isBlocked = isBlocked
+                    )
+                    val newList = currentList.toMutableList()
+                    newList[index] = updated!!
+                    _interactions.value = newList
+                }
+            }
+            if (updated != null) {
+                try {
+                    repository?.insertInteraction(updated!!)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to persist interaction outcome", e)
+                }
             }
         }
     }
