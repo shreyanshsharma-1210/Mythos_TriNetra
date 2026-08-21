@@ -17,6 +17,18 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.trustmesh.app.ui.theme.OnboardingBackground
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.trustmesh.app.core.firewall.OverlayPermissionHelper
+import com.trustmesh.app.firewall.RoleManagerHelper
 
 /**
  * Root onboarding screen.
@@ -32,6 +44,7 @@ import com.trustmesh.app.ui.theme.OnboardingBackground
 fun OnboardingScreen(onFinish: () -> Unit) {
     val pages = onboardingPages
     var currentIndex by remember { mutableIntStateOf(0) }
+    var showPermissionsPopup by remember { mutableStateOf(false) }
 
     // Configure system status bars dynamically for the light onboarding theme
     val view = LocalView.current
@@ -73,12 +86,12 @@ fun OnboardingScreen(onFinish: () -> Unit) {
         if (currentIndex < pages.lastIndex) {
             currentIndex++
         } else {
-            onFinish()
+            showPermissionsPopup = true
         }
     }
 
     fun navigateSkip() {
-        onFinish()
+        showPermissionsPopup = true
     }
 
     Box(
@@ -148,5 +161,120 @@ fun OnboardingScreen(onFinish: () -> Unit) {
                 )
             }
         }
+        
+        if (showPermissionsPopup) {
+            PermissionsPopup(
+                onDismiss = {
+                    showPermissionsPopup = false
+                    onFinish()
+                },
+                onAllGranted = {
+                    showPermissionsPopup = false
+                    onFinish()
+                }
+            )
+        }
     }
+}
+
+@Composable
+fun PermissionsPopup(
+    onDismiss: () -> Unit,
+    onAllGranted: () -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var isCallScreeningActive by remember { mutableStateOf(RoleManagerHelper.isCallScreeningRoleGranted(context)) }
+    var isOverlayGranted by remember { mutableStateOf(OverlayPermissionHelper.hasOverlayPermission(context)) }
+    
+    val requiredPermissions = remember {
+        val perms = mutableListOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.PROCESS_OUTGOING_CALLS
+        )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        perms
+    }
+    
+    var isStandardGranted by remember {
+        mutableStateOf(requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        })
+    }
+
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        isCallScreeningActive = RoleManagerHelper.isCallScreeningRoleGranted(context)
+    }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
+        isStandardGranted = requiredPermissions.all {
+            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isOverlayGranted = OverlayPermissionHelper.hasOverlayPermission(context)
+                isCallScreeningActive = RoleManagerHelper.isCallScreeningRoleGranted(context)
+                isStandardGranted = requiredPermissions.all {
+                    ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val allGranted = isCallScreeningActive && isOverlayGranted && isStandardGranted
+    if (allGranted) {
+        LaunchedEffect(Unit) { onAllGranted() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Required Permissions", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = androidx.compose.ui.graphics.Color.Black) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("TrustMesh needs a few permissions to protect you during incoming calls.", color = androidx.compose.ui.graphics.Color.DarkGray)
+                
+                Button(
+                    onClick = { permissionLauncher.launch(requiredPermissions.toTypedArray()) },
+                    enabled = !isStandardGranted,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isStandardGranted) "✓ Basic Permissions Granted" else "Grant Basic Permissions")
+                }
+                
+                Button(
+                    onClick = { 
+                        val intent = RoleManagerHelper.getCallScreeningRoleIntent(context)
+                        if (intent != null) roleLauncher.launch(intent)
+                    },
+                    enabled = !isCallScreeningActive,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isCallScreeningActive) "✓ Call Screening Granted" else "Grant Call Screening")
+                }
+                
+                Button(
+                    onClick = { OverlayPermissionHelper.requestOverlayPermission(context) },
+                    enabled = !isOverlayGranted,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isOverlayGranted) "✓ Overlay Granted" else "Grant Overlay")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (allGranted) onAllGranted() else onDismiss() }) {
+                Text(if (allGranted) "Continue" else "Skip for now")
+            }
+        }
+    )
 }

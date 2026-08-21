@@ -20,5 +20,8 @@ data class Interaction(
     val packageName: String? = null,
     val callerIdentity: CallerIdentity? = null,
     val callerReputation: com.trustmesh.app.core.identity.CallerReputation? = null,
-    val riskAssessment: RiskAssessment? = null
+    val riskAssessment: RiskAssessment? = null,
+    val protectionDecision: String? = null,
+    val incidentType: com.trustmesh.app.core.incident.IncidentType? = null,
+    val isBlocked: Boolean = false
 )

@@ -101,4 +101,46 @@ class LocalContactIdentityResolver(private val context: Context) : CallerIdentit
             )
         )
     }
+
+    companion object {
+        fun getContactNameSync(context: Context, phoneNumber: String): String? {
+            val hasContactsPermission = try {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.READ_CONTACTS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } catch (e: Exception) {
+                false
+            }
+            if (!hasContactsPermission) return null
+
+            try {
+                val projection = arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                
+                // 1. Raw query
+                val rawUri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(phoneNumber))
+                context.contentResolver.query(rawUri, projection, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                        if (nameIndex >= 0) return cursor.getString(nameIndex)
+                    }
+                }
+                
+                // 2. Normalized query
+                val normalizedNumber = PhoneNumberNormalizer.normalize(phoneNumber)
+                if (normalizedNumber != phoneNumber) {
+                    val normalizedUri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(normalizedNumber))
+                    context.contentResolver.query(normalizedUri, projection, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIndex = cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME)
+                            if (nameIndex >= 0) return cursor.getString(nameIndex)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("TrustMeshIdentity", "Sync lookup error", e)
+            }
+            return null
+        }
+    }
 }

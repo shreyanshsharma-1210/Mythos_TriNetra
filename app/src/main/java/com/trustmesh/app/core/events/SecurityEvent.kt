@@ -4,6 +4,7 @@ import java.util.UUID
 
 enum class EventType {
     INCOMING_CALL,
+    OUTGOING_CALL,
     NOTIFICATION_POSTED,
     UNKNOWN
 }
