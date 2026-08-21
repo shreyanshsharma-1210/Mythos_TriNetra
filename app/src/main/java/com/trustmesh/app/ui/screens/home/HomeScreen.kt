@@ -1330,6 +1330,17 @@ fun CallsTabContent(
     modifier: Modifier = Modifier
 ) {
     val realInteractions by InteractionManager.interactions.collectAsState()
+    var selectedFilter by remember { mutableStateOf("Calls") }
+
+    val filteredInteractions = remember(realInteractions, selectedFilter) {
+        realInteractions.filter { interaction ->
+            val isCall = interaction.appName?.equals("Phone", ignoreCase = true) == true ||
+                    interaction.summary.contains("call", ignoreCase = true) ||
+                    interaction.evidence.any { it.contains("call", ignoreCase = true) }
+            
+            if (selectedFilter == "Calls") isCall else !isCall
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -1340,7 +1351,7 @@ fun CallsTabContent(
     ) {
         item {
             Text(
-                text = "Calls history",
+                text = "Activity history",
                 style = TextStyle(
                     fontFamily = TrinetraFontFamily,
                     fontWeight = FontWeight.Bold,
@@ -1358,12 +1369,46 @@ fun CallsTabContent(
                 )
             )
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Segmented Control
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .background(OnboardingBackground, RoundedCornerShape(24.dp))
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf("Calls", "Messaging").forEach { filter ->
+                    val isSelected = selectedFilter == filter
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (isSelected) Color.White else Color.Transparent)
+                            .clickable { selectedFilter = filter },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = filter,
+                            style = TextStyle(
+                                fontFamily = TrinetraFontFamily,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                fontSize = 15.sp,
+                                color = if (isSelected) OnboardingText else OnboardingTextSecondary
+                            )
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
-        if (realInteractions.isEmpty()) {
+        if (filteredInteractions.isEmpty()) {
             item {
                 Text(
-                    text = "No real calls recorded yet. Mock history shown below.",
+                    text = if (selectedFilter == "Calls") "No real calls recorded yet." else "No messaging activity recorded yet.",
                     style = TextStyle(
                         fontFamily = TrinetraFontFamily,
                         fontWeight = FontWeight.Medium,
@@ -1373,31 +1418,8 @@ fun CallsTabContent(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
-            items(
-                listOf(
-                    Pair("Rahul Sharma", "Incoming call · 11:45 AM"),
-                    Pair("Unknown number", "Missed call · Yesterday"),
-                    Pair("Priya Patel", "Incoming call · 2 days ago")
-                )
-            ) { item ->
-                ActivityRow(
-                    title = item.first,
-                    subtitle = item.second,
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Call,
-                            contentDescription = null,
-                            tint = OnboardingTextSecondary.copy(alpha = 0.8f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    status = if (item.first == "Unknown number") RowStatus.CAUTION else RowStatus.NORMAL,
-                    onClick = {}
-                )
-                HorizontalDivider(color = OnboardingDivider.copy(alpha = 0.5f))
-            }
         } else {
-            items(realInteractions) { interaction ->
+            items(filteredInteractions) { interaction ->
                 val status = when (interaction.riskLevel) {
                     RiskLevel.LOW -> RowStatus.NORMAL
                     RiskLevel.ELEVATED -> RowStatus.CAUTION
@@ -1405,10 +1427,15 @@ fun CallsTabContent(
                 }
                 ActivityRow(
                     title = interaction.title,
-                    subtitle = "${interaction.appName ?: "Call"} · ${interaction.timestamp}",
+                    subtitle = "${interaction.appName ?: if (selectedFilter == "Calls") "Call" else "Message"} · ${interaction.timestamp}",
                     icon = {
+                        val iconVector = if (selectedFilter == "Messaging" || interaction.title.contains("WhatsApp", ignoreCase = true)) {
+                            Icons.Rounded.Notifications
+                        } else {
+                            Icons.Rounded.Call
+                        }
                         Icon(
-                            imageVector = Icons.Rounded.Call,
+                            imageVector = iconVector,
                             contentDescription = null,
                             tint = OnboardingTextSecondary.copy(alpha = 0.8f),
                             modifier = Modifier.size(18.dp)

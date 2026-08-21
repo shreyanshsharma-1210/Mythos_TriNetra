@@ -25,9 +25,12 @@ import com.trustmesh.app.ui.theme.*
 
 @Composable
 fun TrustMeshApp() {
+    val prefs = androidx.compose.ui.platform.LocalContext.current.getSharedPreferences("trinetra_prefs", android.content.Context.MODE_PRIVATE)
+    val isFirstLaunch = prefs.getBoolean("isFirstLaunch", true)
+
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route ?: "onboarding"
+    val currentRoute = navBackStackEntry?.destination?.route ?: if (isFirstLaunch) "onboarding" else "home"
 
     LaunchedEffect(Unit) {
         NavigationTrigger.navigationEvents.collect { route ->
@@ -37,51 +40,41 @@ fun TrustMeshApp() {
         }
     }
 
-    val isOnboarding = currentRoute == "onboarding"
-    val isReport = currentRoute.startsWith("report")
-
-    Scaffold(
-        topBar = {
-            if (!isOnboarding && currentRoute != "home") {
-                val title = if (currentRoute == "settings") "Settings" else "Trinetra"
-                TrustMeshTopBar(
-                    title = title,
-                    onBackClick = { navController.navigateUp() }
-                )
-            }
+    NavHost(
+        navController = navController,
+        startDestination = if (isFirstLaunch) "onboarding" else "home",
+        modifier = Modifier
+    ) {
+        composable("onboarding") {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            OnboardingScreen(onFinish = {
+                val prefs = context.getSharedPreferences("trinetra_prefs", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("isFirstLaunch", false).apply()
+                navController.navigate("home") {
+                    popUpTo("onboarding") { inclusive = true }
+                }
+            })
         }
-    ) { paddingValues ->
-        // For onboarding we want 0 padding — it manages insets itself
-        val contentModifier = if (isOnboarding) Modifier else Modifier.padding(paddingValues)
-
-        NavHost(
-            navController = navController,
-            startDestination = "onboarding",
-            modifier = contentModifier
-        ) {
-            composable("onboarding") {
-                OnboardingScreen(onFinish = {
-                    navController.navigate("home") {
-                        popUpTo("onboarding") { inclusive = true }
-                    }
-                })
-            }
-            composable("home") {
-                HomeScreen(
-                    onInteractionClick = { id -> navController.navigate("report/$id") },
-                    onSettingsClick = { navController.navigate("settings") }
-                )
-            }
-            composable("history") {
-                HistoryScreen(onInteractionClick = { id -> navController.navigate("report/$id") })
-            }
-            composable("report/{id}") { backStackEntry ->
-                val id = backStackEntry.arguments?.getString("id") ?: ""
-                ReportScreen(interactionId = id)
-            }
-            composable("settings") {
-                SettingsScreen()
-            }
+        composable("home") {
+            HomeScreen(
+                onInteractionClick = { id -> navController.navigate("report/$id") },
+                onSettingsClick = { navController.navigate("settings") }
+            )
+        }
+        composable("history") {
+            HistoryScreen(onInteractionClick = { id -> navController.navigate("report/$id") })
+        }
+        composable("report/{id}") { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("id") ?: ""
+            ReportScreen(
+                interactionId = id,
+                onBackClick = { navController.navigateUp() }
+            )
+        }
+        composable("settings") {
+            SettingsScreen(
+                onBackClick = { navController.navigateUp() }
+            )
         }
     }
 }

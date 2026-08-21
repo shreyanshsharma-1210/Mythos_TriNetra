@@ -130,6 +130,21 @@ object InteractionManager {
         scope.launch {
             try {
                 repository?.recordEvent(event)
+                
+                // Re-evaluate active calls so they can pick up this new event as context
+                if (event.type == EventType.NOTIFICATION_POSTED) {
+                    val windowMs = com.trustmesh.app.core.intelligence.risk.RiskEngineConfig.RELATED_EVENT_WINDOW_MS
+                    val currentTime = System.currentTimeMillis()
+                    var recentCalls: List<Interaction> = emptyList()
+                    synchronized(lock) {
+                        recentCalls = _interactions.value.filter { 
+                            it.evidence.contains("Incoming call") && (currentTime - it.timestampMs) <= windowMs 
+                        }
+                    }
+                    for (call in recentCalls) {
+                        evaluateRisk(call.id)
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "recordEvent failed", e)
             }

@@ -35,7 +35,7 @@ fun ProtectionScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "TrustMesh",
+                text = "TriNetra",
                 style = Typography.titleMedium,
                 color = SecurityAccent
             )

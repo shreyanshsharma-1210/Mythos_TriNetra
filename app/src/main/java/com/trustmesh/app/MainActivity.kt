@@ -57,7 +57,9 @@ class MainActivity : ComponentActivity() {
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.READ_CALL_LOG,
             android.Manifest.permission.READ_PHONE_STATE,
-            android.Manifest.permission.PROCESS_OUTGOING_CALLS
+            android.Manifest.permission.PROCESS_OUTGOING_CALLS,
+            android.Manifest.permission.RECEIVE_SMS,
+            android.Manifest.permission.READ_SMS
         )
 
         for (permission in requiredPermissions) {
