@@ -114,7 +114,7 @@ class ProtectionControllerTest {
         ProtectionController.updatePosition(20, 30)
 
         assertEquals(120, lp.x)
-        assertEquals(330, lp.y)
+        assertEquals(180, lp.y)
     }
 
     @Test

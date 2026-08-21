@@ -3,7 +3,7 @@ package com.trustmesh.app.core.intelligence.context
 object PhoneNumberExtractor {
     fun extract(text: String): List<String> {
         val candidates = mutableListOf<String>()
-        val regex = Regex("\\b(?:\\+91[-.\\s]?)?(?:91[-.\\s]?)?[6-9]\\d{2}[-.\\s]?\\d{3}[-.\\s]?\\d{4}\\b")
+        val regex = Regex("(?<!\\d)(?:\\+91|91)?[-.\\s]*[6-9](?:[-.\\s]*\\d){9}(?!\\d)")
         val matches = regex.findAll(text)
         
         for (match in matches) {
