@@ -187,13 +187,20 @@ fun PermissionsPopup(
 
     var isCallScreeningActive by remember { mutableStateOf(RoleManagerHelper.isCallScreeningRoleGranted(context)) }
     var isOverlayGranted by remember { mutableStateOf(OverlayPermissionHelper.hasOverlayPermission(context)) }
+    var isNotificationListenerGranted by remember { 
+        mutableStateOf(
+            android.provider.Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")?.contains(context.packageName) == true
+        )
+    }
     
     val requiredPermissions = remember {
         val perms = mutableListOf(
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.PROCESS_OUTGOING_CALLS
+            Manifest.permission.PROCESS_OUTGOING_CALLS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS
         )
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             perms.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -222,6 +229,7 @@ fun PermissionsPopup(
             if (event == Lifecycle.Event.ON_RESUME) {
                 isOverlayGranted = OverlayPermissionHelper.hasOverlayPermission(context)
                 isCallScreeningActive = RoleManagerHelper.isCallScreeningRoleGranted(context)
+                isNotificationListenerGranted = android.provider.Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")?.contains(context.packageName) == true
                 isStandardGranted = requiredPermissions.all {
                     ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
                 }
@@ -231,7 +239,7 @@ fun PermissionsPopup(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val allGranted = isCallScreeningActive && isOverlayGranted && isStandardGranted
+    val allGranted = isCallScreeningActive && isOverlayGranted && isStandardGranted && isNotificationListenerGranted
     if (allGranted) {
         LaunchedEffect(Unit) { onAllGranted() }
     }
@@ -268,6 +276,19 @@ fun PermissionsPopup(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(if (isOverlayGranted) "✓ Overlay Granted" else "Grant Overlay")
+                }
+                
+                Button(
+                    onClick = { 
+                        try {
+                            val intent = android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                            context.startActivity(intent)
+                        } catch (e: Exception) {}
+                    },
+                    enabled = !isNotificationListenerGranted,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isNotificationListenerGranted) "✓ Notification Access Granted" else "Grant Notification Access")
                 }
             }
         },

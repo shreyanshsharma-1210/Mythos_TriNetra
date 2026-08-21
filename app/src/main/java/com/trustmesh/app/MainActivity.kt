@@ -51,6 +51,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkNotificationListenerPermission() {
+        val enabledListeners = android.provider.Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        if (enabledListeners == null || !enabledListeners.contains(packageName)) {
+            val intent = android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                // Fallback for some OEM devices
+            }
+        }
+    }
+
     private fun requestPermissions() {
         val permissionsToRequest = mutableListOf<String>()
         val requiredPermissions = arrayOf(

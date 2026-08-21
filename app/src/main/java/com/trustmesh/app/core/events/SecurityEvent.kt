@@ -6,6 +6,7 @@ enum class EventType {
     INCOMING_CALL,
     OUTGOING_CALL,
     NOTIFICATION_POSTED,
+    SYSTEM_EVENT,
     UNKNOWN
 }
 
