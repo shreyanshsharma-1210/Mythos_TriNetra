@@ -241,7 +241,7 @@ fun PermissionsPopup(
         title = { Text("Required Permissions", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = androidx.compose.ui.graphics.Color.Black) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("TrustMesh needs a few permissions to protect you during incoming calls.", color = androidx.compose.ui.graphics.Color.DarkGray)
+                Text("TriNetra needs a few permissions to protect you during incoming calls.", color = androidx.compose.ui.graphics.Color.DarkGray)
                 
                 Button(
                     onClick = { permissionLauncher.launch(requiredPermissions.toTypedArray()) },

@@ -10,22 +10,24 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary          = SecurityAccent,
-    background       = TrustMeshBackground,
-    surface          = TrustMeshSurface,
-    onPrimary        = TrustMeshBackground,
-    onBackground     = TextPrimary,
-    onSurface        = TextPrimary,
-    surfaceVariant   = TrustMeshSurfaceElevated,
-    onSurfaceVariant = TextSecondary
+import androidx.compose.material3.lightColorScheme
+
+private val LightColorScheme = lightColorScheme(
+    primary          = OnboardingAccentBlue,
+    background       = OnboardingBackground,
+    surface          = OnboardingBackground,
+    onPrimary        = Color.White,
+    onBackground     = OnboardingText,
+    onSurface        = OnboardingText,
+    surfaceVariant   = Color.White,
+    onSurfaceVariant = OnboardingTextSecondary
 )
 
 @Composable
 fun TrustMeshTheme(
     content: @Composable () -> Unit
 ) {
-    val colorScheme = DarkColorScheme
+    val colorScheme = LightColorScheme
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -36,7 +38,8 @@ fun TrustMeshTheme(
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 // Transparent status bar so onboarding background bleeds through
                 window.statusBarColor = Color.Transparent.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = true
+                WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = true
             }
         }
     }

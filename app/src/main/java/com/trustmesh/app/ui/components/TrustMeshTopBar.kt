@@ -9,8 +9,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import com.trustmesh.app.ui.theme.TrustMeshBackground
-import com.trustmesh.app.ui.theme.TextPrimary
+import com.trustmesh.app.ui.theme.OnboardingBackground
+import com.trustmesh.app.ui.theme.OnboardingText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -19,21 +19,21 @@ fun TrustMeshTopBar(
     onBackClick: (() -> Unit)? = null
 ) {
     TopAppBar(
-        title = { Text(text = title, color = TextPrimary) },
+        title = { Text(text = title, color = OnboardingText) },
         navigationIcon = {
             if (onBackClick != null) {
                 IconButton(onClick = onBackClick) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
                         contentDescription = "Back",
-                        tint = TextPrimary
+                        tint = OnboardingText
                     )
                 }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = TrustMeshBackground,
-            titleContentColor = TextPrimary
+            containerColor = OnboardingBackground,
+            titleContentColor = OnboardingText
         )
     )
 }

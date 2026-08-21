@@ -66,6 +66,7 @@ object ProtectionController {
     private var lastContext: Context? = null
     private var lastCallerName: String = ""
     private var lastCallerNumber: String = ""
+    private var hasShownSummary = false
 
     private class MyLifecycleOwner : SavedStateRegistryOwner {
         private val lifecycleRegistry = LifecycleRegistry(this)
@@ -159,6 +160,13 @@ object ProtectionController {
         if (isOverlayShowing) {
             Log.d(TAG, "showOverlayInternal called while already showing — idempotent, skipping")
             return
+        }
+
+        if (initialState == CallOverlayState.INCOMING || initialState == CallOverlayState.ACTIVE) {
+            hasShownSummary = false
+        }
+        if (initialState == CallOverlayState.SUMMARY) {
+            hasShownSummary = true
         }
 
         if (isTestingMode) {
@@ -289,11 +297,12 @@ object ProtectionController {
         val view = composeView
         val wm = windowManager
         if (view == null || wm == null) {
-            if (state == CallOverlayState.SUMMARY && lastContext != null) {
+            if (state == CallOverlayState.SUMMARY && lastContext != null && !hasShownSummary) {
+                hasShownSummary = true
                 Log.i(TAG, "Respawning overlay for summary after manual dismissal")
                 showOverlayInternal(lastContext!!, lastCallerName, lastCallerNumber, CallOverlayState.SUMMARY)
             } else {
-                Log.w(TAG, "Cannot transition state — view or windowManager is null")
+                Log.w(TAG, "Cannot transition state — view or windowManager is null, or summary already shown")
             }
             return
         }
@@ -305,6 +314,7 @@ object ProtectionController {
         }
 
         if (state == CallOverlayState.SUMMARY) {
+            hasShownSummary = true
             if (activeCallStartTimeMs > 0) {
                 activeCallDurationSeconds = (System.currentTimeMillis() - activeCallStartTimeMs) / 1000
                 activeCallStartTimeMs = 0L

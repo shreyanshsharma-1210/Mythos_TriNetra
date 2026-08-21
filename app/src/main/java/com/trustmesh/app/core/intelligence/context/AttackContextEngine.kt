@@ -11,6 +11,7 @@ object AttackContextEngine {
 
     private val FINANCIAL_KEYWORDS = listOf("bank", "payment", "transaction", "upi", "debited", "credited", "account", "transfer", "money")
     private val OTP_KEYWORDS = listOf("otp", "verification", "verification code", "one-time password", "security code", "login code")
+    private val OTP_DIGIT_REGEX = Regex("\\b(\\d{4}|\\d{6})\\b")
 
     fun evaluateContext(interaction: Interaction, recentEvents: List<SecurityEvent>): AttackContext? {
         val windowMs = RiskEngineConfig.RELATED_EVENT_WINDOW_MS
@@ -35,7 +36,7 @@ object AttackContextEngine {
             if (FINANCIAL_KEYWORDS.any { fullText.contains(it) }) {
                 hasFinancial = true
             }
-            if (OTP_KEYWORDS.any { fullText.contains(it) }) {
+            if (OTP_KEYWORDS.any { fullText.contains(it) } || OTP_DIGIT_REGEX.containsMatchIn(fullText)) {
                 hasOtp = true
             }
         }
@@ -48,7 +49,7 @@ object AttackContextEngine {
             if (FINANCIAL_KEYWORDS.any { fullText.contains(it) }) {
                 hasFinancial = true
             }
-            if (OTP_KEYWORDS.any { fullText.contains(it) }) {
+            if (OTP_KEYWORDS.any { fullText.contains(it) } || OTP_DIGIT_REGEX.containsMatchIn(fullText)) {
                 hasOtp = true
             }
         }

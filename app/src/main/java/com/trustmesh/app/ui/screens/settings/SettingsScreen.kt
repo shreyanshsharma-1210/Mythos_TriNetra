@@ -41,20 +41,22 @@ import com.trustmesh.app.data.local.entity.TrustedCallerEntity
 import com.trustmesh.app.data.repository.ProtectionPolicyRepository
 import com.trustmesh.app.firewall.NotificationAccessHelper
 import com.trustmesh.app.firewall.RoleManagerHelper
+import com.trustmesh.app.ui.components.TrustMeshTopBar
+import androidx.compose.material3.Scaffold
 import com.trustmesh.app.ui.theme.*
 import kotlinx.coroutines.launch
 
-private val DarkSurface = Color(0xFF15181D)
-private val DarkCard = Color(0xFF1E2229)
-private val AccentBlue = Color(0xFF4285F4)
-private val AccentGreen = Color(0xFF34A853)
-private val AccentYellow = Color(0xFFFBBC05)
-private val AccentRed = Color(0xFFEA4335)
-private val TextPrimaryW = Color.White
-private val TextSecondaryW = Color(0xFFAAAAAA)
+private val LightSurface = Color(0xFFFAFAF8)
+private val LightCard = Color.White
+private val AccentBlue = Color(0xFF667DFF)
+private val AccentGreen = Color(0xFF3AA968)
+private val AccentYellow = Color(0xFFD99A35)
+private val AccentRed = Color(0xFFD94D62)
+private val TextPrimaryW = Color(0xFF11182D)
+private val TextSecondaryW = Color(0xFF626978)
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onBackClick: () -> Unit = {}) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -167,18 +169,24 @@ fun SettingsScreen() {
         )
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TrustMeshBackground)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
-    ) {
+    Scaffold(
+        topBar = {
+            TrustMeshTopBar(title = "Settings", onBackClick = onBackClick)
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(OnboardingBackground)
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
 
         // ─── HEADER ────────────────────────────────────────────────────────
         item {
             Spacer(Modifier.height(16.dp))
-            Text("Settings", style = Typography.headlineMedium, color = TextPrimary,
+            Text("Settings", style = Typography.headlineMedium, color = TextPrimaryW,
                 fontWeight = FontWeight.Bold, fontSize = 28.sp)
             Spacer(Modifier.height(24.dp))
         }
@@ -220,7 +228,7 @@ fun SettingsScreen() {
             SettingsCard {
                 Column(Modifier.padding(16.dp)) {
                     Text(
-                        "Callers in this list skip TrustMesh risk checks. Only add people you fully trust.",
+                        "Callers in this list skip TriNetra risk checks. Only add people you fully trust.",
                         color = TextSecondaryW, fontSize = 13.sp
                     )
                     Spacer(Modifier.height(12.dp))
@@ -278,7 +286,7 @@ fun SettingsScreen() {
                             }
                         }
                     )
-                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                     PermissionRow(
                         label = "Notification Monitoring",
                         description = "Observe notification signals",
@@ -289,7 +297,7 @@ fun SettingsScreen() {
                             }
                         }
                     )
-                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                     PermissionRow(
                         label = "Overlay Permission",
                         description = "Show real-time protection UI",
@@ -300,7 +308,7 @@ fun SettingsScreen() {
                             }
                         }
                     )
-                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                     PermissionRow(
                         label = "Contacts Access",
                         description = "Resolve contact names for incoming calls",
@@ -311,7 +319,7 @@ fun SettingsScreen() {
                             }
                         }
                     )
-                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                     PermissionRow(
                         label = "Call Logs Access",
                         description = "Read call logs to identify spam call history",
@@ -322,7 +330,7 @@ fun SettingsScreen() {
                             }
                         }
                     )
-                    HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                     PermissionRow(
                         label = "Phone State Access",
                         description = "Detect calls and read phone numbers",
@@ -334,7 +342,7 @@ fun SettingsScreen() {
                         }
                     )
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 4.dp))
                         PermissionRow(
                             label = "Post Notifications",
                             description = "Notify about risk updates and caller info",
@@ -406,6 +414,7 @@ fun SettingsScreen() {
             }
             Spacer(Modifier.height(32.dp))
         }
+        }
     }
 }
 
@@ -450,8 +459,8 @@ fun ProtectionModeCard(
     accentColor: Color,
     onSelect: () -> Unit
 ) {
-    val borderColor = if (selected) accentColor else Color(0xFF2A2F38)
-    val bgColor = if (selected) accentColor.copy(alpha = 0.08f) else DarkCard
+    val borderColor = if (selected) accentColor else OnboardingDivider
+    val bgColor = if (selected) accentColor.copy(alpha = 0.08f) else LightCard
 
     Row(
         modifier = Modifier
@@ -501,7 +510,7 @@ fun ProtectionCustomizer(
             PolicyActionRow("Critical Risk", criticalRisk, AccentRed) { criticalRisk = it; onUpdate(lowRisk, elevatedRisk, highRisk, criticalRisk, unknownCaller, autoBlock) }
             PolicyActionRow("Unknown Caller", unknownCaller, Color(0xFF9E9E9E)) { unknownCaller = it; onUpdate(lowRisk, elevatedRisk, highRisk, criticalRisk, unknownCaller, autoBlock) }
 
-            HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 12.dp))
+            HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 12.dp))
 
             Row(
                 Modifier.fillMaxWidth(),
@@ -560,7 +569,7 @@ fun PolicyActionRow(label: String, currentAction: ProtectionAction, dotColor: Co
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier.background(DarkCard)
+                modifier = Modifier.background(LightCard)
             ) {
                 displayableActions.forEach { (action, name) ->
                     DropdownMenuItem(
@@ -587,12 +596,12 @@ fun TrustedCallersDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = DarkCard,
+        containerColor = LightCard,
         title = { Text("Trusted Callers", color = TextPrimaryW, fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 Text(
-                    "These callers bypass TrustMesh risk analysis.",
+                    "These callers bypass TriNetra risk analysis.",
                     color = TextSecondaryW, fontSize = 13.sp
                 )
                 Spacer(Modifier.height(12.dp))
@@ -617,7 +626,7 @@ fun TrustedCallersDialog(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFF2A2F38), modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(color = OnboardingDivider, modifier = Modifier.padding(vertical = 8.dp))
 
                 Text("Add Trusted Caller", color = AccentGreen, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
@@ -629,7 +638,7 @@ fun TrustedCallersDialog(
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AccentBlue,
-                        unfocusedBorderColor = Color(0xFF2A2F38),
+                        unfocusedBorderColor = OnboardingDivider,
                         focusedTextColor = TextPrimaryW,
                         unfocusedTextColor = TextPrimaryW
                     )
@@ -643,7 +652,7 @@ fun TrustedCallersDialog(
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AccentBlue,
-                        unfocusedBorderColor = Color(0xFF2A2F38),
+                        unfocusedBorderColor = OnboardingDivider,
                         focusedTextColor = TextPrimaryW,
                         unfocusedTextColor = TextPrimaryW
                     )
@@ -683,7 +692,7 @@ fun SettingsCard(modifier: Modifier = Modifier, content: @Composable () -> Unit)
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        color = DarkCard,
+        color = LightCard,
         shadowElevation = 4.dp
     ) {
         content()

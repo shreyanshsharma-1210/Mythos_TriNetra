@@ -115,7 +115,7 @@ fun ActiveCallStatusBox(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "🛡 TrustMesh: ${riskLevel.displayName}",
+                    text = "🛡 TriNetra: ${riskLevel.displayName}",
                     color = when (riskLevel) {
                         RiskLevel.CRITICAL, RiskLevel.HIGH -> Color(0xFFEA4335)
                         RiskLevel.ELEVATED -> Color(0xFFFBBC05)
@@ -147,7 +147,7 @@ fun ActiveCallStatusBox(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("🛡 TrustMesh Details", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("🛡 TriNetra Details", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(
                         text = "Collapse",
                         color = Color.Gray,
@@ -229,7 +229,7 @@ fun CallSummaryOverlay(
             ) {
                 Text("🛡", fontSize = 20.sp)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("TrustMesh Call Summary", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("TriNetra Call Summary", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -394,7 +394,7 @@ fun CompactFloatingOverlay(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text("🛡 TrustMesh", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("🛡 TriNetra", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 if (callerIdentity?.isKnown == true) {
                     Text(callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" }, color = Color.White, fontWeight = FontWeight.SemiBold)
@@ -451,7 +451,7 @@ fun FloatingRiskCard(
         shadowElevation = 12.dp
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("🛡 TrustMesh", color = themeColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("🛡 TriNetra", color = themeColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(modifier = Modifier.height(12.dp))
             val title = if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" }
             Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -500,7 +500,7 @@ fun BottomRiskSheet(
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("🛡 TrustMesh", color = Color(0xFFEA4335), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("🛡 TriNetra", color = Color(0xFFEA4335), fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(modifier = Modifier.height(8.dp))
             Text(riskLevel.displayName, color = Color(0xFFEA4335), fontWeight = FontWeight.Black, fontSize = 22.sp)
             Spacer(modifier = Modifier.height(16.dp))
