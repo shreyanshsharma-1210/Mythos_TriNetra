@@ -176,6 +176,9 @@ fun ActiveCallStatusBox(
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
+                    if (riskAssessment != null) {
+                        Text("  •  Score: ${riskAssessment.score}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
                 val explanation = activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Monitoring call events locally..."
