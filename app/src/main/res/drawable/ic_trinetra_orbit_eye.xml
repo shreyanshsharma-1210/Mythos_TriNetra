@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="600"
+    android:viewportHeight="600">
+
+    <!-- Radial glow behind eye -->
+    <path
+        android:pathData="M300,195 a105,105 0 1,1 0.001,0 Z"
+        android:fillColor="#1A314B93"
+        android:strokeWidth="0"/>
+
+    <!-- Outer orbit ellipse (horizontal) -->
+    <path
+        android:pathData="M65,300 a235,92 0 1,1 0.001,0 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#879CFF"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.65"/>
+
+    <!-- Inner orbit ellipse (rotated ~42deg) -->
+    <path
+        android:pathData="M208,65 a92,235 0 1,1 0.001,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#B4C0FF"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.45"/>
+
+    <!-- Glow circle -->
+    <path
+        android:pathData="M195,300 a105,105 0 1,1 210,0 a105,105 0 1,1 -210,0"
+        android:fillColor="#22314B93"/>
+
+    <!-- Main eye pupil dark -->
+    <path
+        android:pathData="M226,300 a74,74 0 1,1 148,0 a74,74 0 1,1 -148,0"
+        android:fillColor="#10172B"/>
+
+    <!-- Eye highlight -->
+    <path
+        android:pathData="M260,278 a20,20 0 1,1 40,0 a20,20 0 1,1 -40,0"
+        android:fillColor="#BFCBFF"
+        android:fillAlpha="0.75"/>
+
+    <!-- Small orbit node left -->
+    <path
+        android:pathData="M108,284 a8,8 0 1,1 16,0 a8,8 0 1,1 -16,0"
+        android:fillColor="#5C72FF"/>
+
+    <!-- Small orbit node right -->
+    <path
+        android:pathData="M446,350 a9,9 0 1,1 18,0 a9,9 0 1,1 -18,0"
+        android:fillColor="#5C72FF"/>
+
+    <!-- Top orbit node -->
+    <path
+        android:pathData="M381,92 a7,7 0 1,1 14,0 a7,7 0 1,1 -14,0"
+        android:fillColor="#A7B5FF"/>
+
+</vector>

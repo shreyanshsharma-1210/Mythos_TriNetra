@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="260dp"
+    android:height="225dp"
+    android:viewportWidth="600"
+    android:viewportHeight="520">
+
+    <!-- Central core circle -->
+    <path
+        android:pathData="M230,260 a70,70 0 1,1 140,0 a70,70 0 1,1 -140,0"
+        android:fillColor="#10172B"/>
+
+    <!-- Inner orbit ring -->
+    <path
+        android:pathData="M195,260 a105,105 0 1,1 210,0 a105,105 0 1,1 -210,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#7F91FF"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.55"/>
+
+    <!-- Outer orbit ellipse (horizontal) -->
+    <path
+        android:pathData="M60,260 a240,100 0 1,1 480,0 a240,100 0 1,1 -480,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#A9B5FF"
+        android:strokeWidth="2.5"
+        android:strokeAlpha="0.6"/>
+
+    <!-- Satellite circles with white background -->
+    <!-- Left satellite -->
+    <path
+        android:pathData="M42,225 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#DDE2FF"
+        android:strokeWidth="3"/>
+    <!-- Left satellite plus H line -->
+    <path
+        android:pathData="M68,225 L92,225"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+    <!-- Left satellite plus V line -->
+    <path
+        android:pathData="M80,213 L80,237"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+
+    <!-- Top-right satellite -->
+    <path
+        android:pathData="M477,180 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#DDE2FF"
+        android:strokeWidth="3"/>
+    <path
+        android:pathData="M503,180 L527,180"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M515,168 L515,192"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+
+    <!-- Bottom-right satellite -->
+    <path
+        android:pathData="M382,445 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#DDE2FF"
+        android:strokeWidth="3"/>
+    <path
+        android:pathData="M408,445 L432,445"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M420,433 L420,457"
+        android:fillColor="#00000000"
+        android:strokeColor="#5368E8"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"/>
+
+</vector>

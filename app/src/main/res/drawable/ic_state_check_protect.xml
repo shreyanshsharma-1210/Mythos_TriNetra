@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="260dp"
+    android:viewportWidth="600"
+    android:viewportHeight="520">
+
+    <!-- Vertical connector line -->
+    <path
+        android:pathData="M300,70 L300,450"
+        android:fillColor="#00000000"
+        android:strokeColor="#D7DBE8"
+        android:strokeWidth="5"/>
+
+    <!-- Safe state: green circle -->
+    <path
+        android:pathData="M262,100 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#DDF4E5"/>
+
+    <!-- Safe checkmark -->
+    <path
+        android:pathData="M283,100 L295,114 L320,86"
+        android:fillColor="#00000000"
+        android:strokeColor="#3AA968"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- Check state: amber circle -->
+    <path
+        android:pathData="M262,260 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#FFF1CF"/>
+
+    <!-- Check ! mark -->
+    <path
+        android:pathData="M300,242 L300,268"
+        android:fillColor="#00000000"
+        android:strokeColor="#D99A35"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M297,278 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0"
+        android:fillColor="#D99A35"/>
+
+    <!-- Protect state: red circle -->
+    <path
+        android:pathData="M262,420 a38,38 0 1,1 76,0 a38,38 0 1,1 -76,0"
+        android:fillColor="#FFE3E6"/>
+
+    <!-- Protect dot -->
+    <path
+        android:pathData="M290,420 a10,10 0 1,1 20,0 a10,10 0 1,1 -20,0"
+        android:fillColor="#D94D62"/>
+
+    <!-- Safe label -->
+    <path
+        android:pathData="M370,108 L430,108"
+        android:fillColor="#00000000"
+        android:strokeColor="#171B2A"
+        android:strokeWidth="3"/>
+
+    <!-- Check label line -->
+    <path
+        android:pathData="M370,268 L440,268"
+        android:fillColor="#00000000"
+        android:strokeColor="#171B2A"
+        android:strokeWidth="3"/>
+
+    <!-- Protect label line -->
+    <path
+        android:pathData="M370,428 L450,428"
+        android:fillColor="#00000000"
+        android:strokeColor="#171B2A"
+        android:strokeWidth="3"/>
+
+</vector>

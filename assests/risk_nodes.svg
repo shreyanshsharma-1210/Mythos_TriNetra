@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 520">
+<circle cx="300" cy="260" r="58" fill="#FFFFFF" stroke="#D8DEFF" stroke-width="4"/>
+<circle cx="300" cy="260" r="30" fill="#5268E8"/>
+<path d="M300 260 L130 135 M300 260 L480 130 M300 260 L470 405" stroke="#B4BFFF" stroke-width="4"/>
+<circle cx="130" cy="135" r="48" fill="#F4F6FF" stroke="#A7B2FF" stroke-width="4"/>
+<circle cx="480" cy="130" r="48" fill="#FFF7DE" stroke="#E7B840" stroke-width="4"/>
+<circle cx="470" cy="405" r="48" fill="#FFF0F1" stroke="#E26A78" stroke-width="4"/>
+<text x="130" y="148" text-anchor="middle" font-family="Arial" font-size="38" fill="#5268E8">✓</text>
+<text x="480" y="144" text-anchor="middle" font-family="Arial" font-size="40" fill="#D99A35">!</text>
+<text x="470" y="419" text-anchor="middle" font-family="Arial" font-size="38" fill="#D94D62">⌁</text>
+</svg>

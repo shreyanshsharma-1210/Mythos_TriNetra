@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="208dp"
+    android:viewportWidth="600"
+    android:viewportHeight="520">
+
+    <!-- Outer soft green glow -->
+    <path
+        android:pathData="M150,270 a150,150 0 1,1 300,0 a150,150 0 1,1 -300,0"
+        android:fillColor="#20EAF9F0"/>
+
+    <!-- Middle glow ring -->
+    <path
+        android:pathData="M165,270 a135,135 0 1,1 270,0 a135,135 0 1,1 -270,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#9DE0B5"
+        android:strokeWidth="3"
+        android:strokeAlpha="0.7"/>
+
+    <!-- White inner circle -->
+    <path
+        android:pathData="M208,270 a92,92 0 1,1 184,0 a92,92 0 1,1 -184,0"
+        android:fillColor="#FFFFFF"
+        android:strokeColor="#75C995"
+        android:strokeWidth="5"/>
+
+    <!-- Shield outline -->
+    <path
+        android:pathData="M300,215 L350,235 L350,275 C350,315 325,340 300,352 C275,340 250,315 250,275 L250,235 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#39A968"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- Shield checkmark -->
+    <path
+        android:pathData="M278,276 L293,291 L324,257"
+        android:fillColor="#00000000"
+        android:strokeColor="#39A968"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+</vector>
