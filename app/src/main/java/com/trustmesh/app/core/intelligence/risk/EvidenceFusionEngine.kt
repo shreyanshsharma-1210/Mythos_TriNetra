@@ -41,26 +41,84 @@ object EvidenceFusionEngine {
         val notifications = recentEvents.filter { it.type == EventType.NOTIFICATION_POSTED }
         var hasSecurityNotification = false
         for (notif in notifications) {
-            val title = notif.metadata["title"]?.lowercase() ?: ""
-            val text = notif.metadata["text"]?.lowercase() ?: ""
+            val title = notif.metadata["title"] ?: ""
+            val text = notif.metadata["text"] ?: ""
             
-            // Very simple heuristic rules for Phase 7
-            if (title.contains("bank") || title.contains("payment") || title.contains("transfer") || title.contains("upi") || title.contains("transaction") || text.contains("otp")) {
+            val intentSignals = com.trustmesh.app.core.intelligence.context.SmsIntentClassifier.classify(text, title)
+            val urlSignals = com.trustmesh.app.core.intelligence.context.UrlAnalyzer.analyze(text)
+            
+            val allSignals = intentSignals + urlSignals
+            
+            for (signal in allSignals) {
+                val factorType = when (signal.type.category) {
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.FINANCIAL -> RiskFactorType.INTENT_FINANCIAL
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.AUTHENTICATION -> RiskFactorType.INTENT_OTP_VERIFICATION
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.REMOTE_ACCESS -> RiskFactorType.INTENT_REMOTE_ACCESS
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.URGENCY -> RiskFactorType.INTENT_URGENCY
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.SOCIAL_ENGINEERING -> RiskFactorType.INTENT_SOCIAL_ENGINEERING
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.TELECOM,
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.UTILITY,
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.DELIVERY,
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.GOVERNMENT -> RiskFactorType.INTENT_THREAT_OR_SUSPENSION
+                    com.trustmesh.app.core.intelligence.context.ScamSignalCategory.LINK -> RiskFactorType.INTENT_MALICIOUS_LINK
+                    else -> RiskFactorType.SUSPICIOUS_NOTIFICATION
+                }
+                
                 factors.add(RiskFactor(
-                    type = RiskFactorType.FINANCIAL_NOTIFICATION,
-                    description = "Financial notification observed",
-                    weight = RiskEngineConfig.WEIGHT_FINANCIAL_NOTIFICATION,
-                    source = "Notification Sensor"
+                    type = factorType,
+                    description = signal.explanation,
+                    weight = signal.weight,
+                    source = signal.source,
+                    confidence = when(signal.confidence) {
+                        com.trustmesh.app.core.intelligence.context.Confidence.HIGH -> 1.0f
+                        com.trustmesh.app.core.intelligence.context.Confidence.MEDIUM -> 0.7f
+                        com.trustmesh.app.core.intelligence.context.Confidence.LOW -> 0.4f
+                    }
                 ))
-                hasSecurityNotification = true
-            } else if (title.contains("security") || title.contains("alert") || title.contains("login") || title.contains("password")) {
+                
+                if (signal.weight >= 10 || signal.type.category == com.trustmesh.app.core.intelligence.context.ScamSignalCategory.AUTHENTICATION) {
+                    hasSecurityNotification = true
+                }
+            }
+            
+            // Extract callback number
+            val extractedNumbers = com.trustmesh.app.core.intelligence.context.PhoneNumberExtractor.extract(text)
+            val hasCallbackIntent = intentSignals.any { it.type == com.trustmesh.app.core.intelligence.context.ScamSignalType.CALL_THIS_NUMBER || it.type == com.trustmesh.app.core.intelligence.context.ScamSignalType.CONTACT_AGENT }
+            
+            if (hasCallbackIntent && extractedNumbers.isNotEmpty()) {
+                val extracted = extractedNumbers.first()
                 factors.add(RiskFactor(
-                    type = RiskFactorType.SECURITY_NOTIFICATION,
-                    description = "Security-related notification observed",
-                    weight = RiskEngineConfig.WEIGHT_SECURITY_NOTIFICATION,
-                    source = "Notification Sensor"
+                    type = RiskFactorType.CALLBACK_NUMBER,
+                    description = "Message instructs to contact a specific number",
+                    weight = 5,
+                    source = "Callback Intelligence"
                 ))
-                hasSecurityNotification = true
+                
+                val incomingCaller = interaction.associatedKey ?: interaction.callerIdentity?.phoneNumber
+                if (incomingCaller != null && incomingCaller != extracted) {
+                    factors.add(RiskFactor(
+                        type = RiskFactorType.CALLBACK_NUMBER_MISMATCH,
+                        description = "Callback number in message does not match incoming caller",
+                        weight = 15,
+                        source = "Callback Intelligence"
+                    ))
+                }
+            }
+        }
+        
+        // Correlate APK install request with PACKAGE_ADDED
+        val hasApkRequest = factors.any { it.type == RiskFactorType.INTENT_REMOTE_ACCESS }
+        if (hasApkRequest) {
+            val packageAddedEvents = recentEvents.filter { 
+                it.type == EventType.SYSTEM_EVENT && it.metadata["action"] == "PACKAGE_ADDED" 
+            }
+            if (packageAddedEvents.isNotEmpty()) {
+                factors.add(RiskFactor(
+                    type = RiskFactorType.PACKAGE_ADDED,
+                    description = "A new package was installed shortly after an APK installation request",
+                    weight = 25,
+                    source = "Package Event Sensor"
+                ))
             }
         }
         

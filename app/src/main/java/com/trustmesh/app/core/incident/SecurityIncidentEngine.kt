@@ -14,8 +14,7 @@ object SecurityIncidentEngine {
             ContextType.FINANCIAL_FRAUD -> IncidentType.FINANCIAL_FRAUD
             ContextType.SOCIAL_ENGINEERING -> IncidentType.SOCIAL_ENGINEERING
             ContextType.SUSPICIOUS_CALL_SEQUENCE -> IncidentType.SUSPICIOUS_CALL
-            ContextType.ACCOUNT_TAKEOVER -> IncidentType.OTHER
-            ContextType.UNKNOWN -> IncidentType.OTHER
+            else -> IncidentType.OTHER
         }
     }
 
