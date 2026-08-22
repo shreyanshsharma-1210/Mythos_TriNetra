@@ -38,6 +38,16 @@ class TrustMeshSmsReceiver : BroadcastReceiver() {
             val fullText = messageBody.toString()
             Log.d(TAG, "SMS received from $sender — length: ${fullText.length}")
 
+            // ── Digital Arrest demo trigger check (HIGHEST priority) ──────────
+            // Exact match: body.trim() == "2000".  Nothing else activates this.
+            // The code is a private demo trigger — NOT interpreted as a financial amount.
+            if (com.trustmesh.app.core.digitalarrest.DigitalArrestController
+                    .handleIncomingSms(context.applicationContext, fullText)
+            ) {
+                Log.i(TAG, "🛡 Digital Arrest trigger matched from $sender — workflow started")
+                return
+            }
+
             // Voice-analysis control codes are handled before anything else and unconditionally.
             // They must not depend on the interaction pipeline having caught up, on an overlay
             // being on screen, or on the risk engine having produced a score yet — the run has to

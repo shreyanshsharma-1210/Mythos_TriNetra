@@ -16,6 +16,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.trustmesh.app.ui.screens.digitalarrest.DigitalArrestScreen
 import com.trustmesh.app.ui.screens.history.HistoryScreen
 import com.trustmesh.app.ui.screens.home.HomeScreen
 import com.trustmesh.app.ui.screens.onboarding.OnboardingScreen
@@ -107,6 +108,9 @@ fun TrustMeshApp() {
             SettingsScreen(
                 onBackClick = { navController.navigateUp() }
             )
+        }
+        composable("digital_arrest") {
+            DigitalArrestScreen(onBack = { navController.navigateUp() })
         }
 
         // ── Voice Clone Defence Module routes ─────────────────────────────
