@@ -22,6 +22,13 @@
 
 **Track** — Cybersecurity, Digital Trust and Smart Surveillance
 
+**Jump to** — [Threat model](#threat-model) · [Capability matrix](#capability-matrix) ·
+[Architecture](#architecture) · [Measured, not asserted](#measured-not-asserted) ·
+[Modules](#modules) · [Threat coverage](#threat-coverage) · [Technology choices](#technology-choices) ·
+[Build and run](#build-and-run)
+
+---
+
 ## The problem
 
 A scam call no longer sounds like a scam call. It arrives as *"your KYC has expired and your SIM will
@@ -32,6 +39,35 @@ Every channel is defended separately, if at all. SMS filters do not know a call 
 Caller-ID apps do not read the message that arrived ninety seconds earlier. Nothing on the device
 checks whether the voice belongs to the person it claims to be. **The attack spans channels; the
 defences do not.**
+
+### How the attack actually runs
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Attacker
+    participant P as Phone
+    participant T as TriNetra
+    A->>P: SMS - "KYC expired, SIM blocks in 2h, call 98xxxxxx"
+    P->>T: SMS_RECEIVED
+    T->>T: L1 signals - KYC_EXPIRY 15, SIM_BLOCK 20, CALLBACK_NUMBER
+    T->>T: L3 semantics - telecom impersonation
+    Note over T: risk 45 ELEVATED - recorded, no alarm yet
+    A->>P: Call from an unknown number, 90 seconds later
+    P->>T: CallScreeningService.onScreenCall
+    T->>T: L4 correlation - SMS and call inside the 5-min window
+    Note over T: ContextType.KYC_SCAM, +20 - risk 70 HIGH
+    T->>P: Overlay - evidence, reasoning, recommended actions
+    A->>P: "Read me the OTP so I can verify you"
+    T->>T: Voice scored on speakerphone, transcript scored live
+    T->>P: CRITICAL - alarm, trusted contact notified
+```
+
+Neither message is damning on its own. A KYC SMS is ordinary; a call from an unknown number is
+ordinary. **The attack is only visible in the join** — and that join is what nothing else on the phone
+performs.
+
+---
 
 ## What we built
 
@@ -105,6 +141,26 @@ SAFE → SUSPICIOUS → CRITICAL while the same person talks. `SessionScores` de
 five-window buffer**, requires a level to hold before showing it, and makes de-escalation slower than
 escalation. A status that changes every three seconds teaches users to ignore it.
 
+```mermaid
+stateDiagram-v2
+    [*] --> INDETERMINATE
+    INDETERMINATE --> SAFE: first verdict, 3 windows
+    INDETERMINATE --> SUSPICIOUS: first verdict, 3 windows
+    INDETERMINATE --> CRITICAL: first verdict, 3 windows
+    SAFE --> SUSPICIOUS: 2 agree
+    SUSPICIOUS --> CRITICAL: 2 agree
+    CRITICAL --> SUSPICIOUS: 4 agree
+    SUSPICIOUS --> SAFE: 4 agree
+    note right of INDETERMINATE
+        No speech, no voiceprint,
+        or a model that failed.
+        Never rendered as SAFE.
+    end note
+```
+
+Escalation costs two agreeing windows; de-escalation costs four. A genuine finding is not withdrawn by
+one clean frame, and a user is not left waiting to be warned.
+
 **4 · A microphone that opens quietly is a wiretap.**
 Capture is interlocked in code, not by screen ordering. `DisclosureGate` is opened by the disclosure
 banner the moment it actually draws, and `LiveVerificationService` refuses to open the microphone
@@ -118,6 +174,36 @@ A microphone voiceprint scores **0.7655 against narrowband call audio from the s
 the 0.75 match threshold. That is a mechanical cause of someone's own voice returning "not confirmed",
 nothing to do with model quality. Enrolment stores channel variants; matching channels recover the
 score to 0.9766.
+
+---
+
+## Threat model
+
+**Who we defend against.** A remote attacker with a phone line, an SMS gateway, a caller-ID spoofer
+and a consumer voice-cloning tool. They can impersonate a bank, a telecom regulator or the police,
+they know the victim's number and often their name, and they can synthesise a familiar voice from a
+few seconds of public audio. They are working to a script and to a clock.
+
+**What we assume they cannot do.** Compromise the handset, gain root, install a malicious app the user
+does not consent to, or break TLS. TriNetra defends the *conversation*, not the device — a rooted
+phone is outside its model, and it says so rather than pretending otherwise.
+
+| Attacker capability | Assumed | How TriNetra answers it |
+|---|---|---|
+| Spoof caller ID and sender name | Yes | Identity is never the whole verdict; behaviour and content are scored independently |
+| Impersonate a bank, TRAI, DoT or police | Yes | 60+ typed signals plus semantic classification; authority claims raise risk rather than lower it |
+| Clone a known voice convincingly | Yes | Speaker verification against an enrolled voiceprint, plus a codeword no model can know |
+| Split an attack across SMS and a call | Yes | 5-minute correlation window; the join is the detection |
+| Push the victim to install a remote-access app | Yes | `PackageEventReceiver` flags installs occurring mid-call |
+| Rush the victim past the warning | Yes | Escalation is proportionate and the alarm is hard to ignore; a trusted contact is notified above threshold |
+| Compromise the device itself | **No** | Out of scope, stated rather than hidden |
+
+**False positives are the real risk.** A scam detector that cries wolf is uninstalled, and the people
+most exposed to these scams are the least able to second-guess it. Four mechanisms exist purely to
+keep the false-positive rate down: per-contact detector calibration, median-of-five verdict
+stabilisation, `INDETERMINATE` as a first-class state, and known-business identity *lowering* risk
+rather than everything only ever raising it. That work is measured — **zero false CRITICAL windows on
+genuine audio** — and described in [Measured, not asserted](#measured-not-asserted).
 
 ---
 
@@ -313,8 +399,18 @@ the cache clears at the start of every call so no caller inherits the previous o
 
 `ProtectionPolicyEngine` maps risk to one of seven actions, from `MONITOR_ONLY` up to `BLOCK_CALL`.
 `ProtectionController` owns a `TYPE_APPLICATION_OVERLAY` window with its own `LifecycleOwner` and
-`SavedStateRegistryOwner` — there is no Activity behind it. The surface escalates with severity: a
-draggable pill, then a risk card, then a modal intervention.
+`SavedStateRegistryOwner` — there is no Activity behind it. The surface escalates with severity, and
+the window itself is resized and re-flagged at each step so a low-risk call is never obstructed:
+
+```mermaid
+flowchart LR
+    R{"Risk score"} -->|"0-24 LOW"| A["Draggable pill<br/>WRAP_CONTENT, non-modal"]
+    R -->|"25-49 ELEVATED"| B["Risk card<br/>evidence + reasoning"]
+    R -->|"50-74 HIGH"| C["Full card<br/>MATCH_PARENT, touch-modal"]
+    R -->|"75-100 CRITICAL"| D["Security intervention<br/>alarm + trusted-contact SMS"]
+    A -.->|tap to expand| B
+    C -.->|user dismiss| A
+```
 
 ### 5 · Voice Clone Defence — `vcd/`
 
@@ -329,6 +425,30 @@ vcd/
   service/   VoipCallService · LiveVerificationService · AvailabilityService · DisclosureGate
   data/      Room contacts + call history · VoiceprintCrypto (encrypted at rest)
   ui/        enroll · call (WebRTC dialler) · live · testmode · spike · shell
+```
+
+```mermaid
+flowchart TB
+    subgraph EN["Enrolment - once, consented"]
+        E1["~60 s of speech"] --> E2["Channel variants<br/>mic / voip-wb / voip-nb"]
+        E2 --> E3["Speaker embeddings<br/>256-dim, L2 normalised"]
+        E2 --> E4["baselineSynthetic<br/>median spoof score"]
+        E4 --> E5{"headroom above<br/>the baseline?"}
+        E5 -->|no| E6["SpoofCheck.UNRELIABLE<br/>identity carries the verdict"]
+        E5 -->|yes| E7["threshold =<br/>max(0.50, baseline + 0.15)"]
+    end
+    subgraph LIVE["Live call - cellular or WebRTC"]
+        L1["Remote audio"] --> L2["WindowSlicer<br/>64,600 samples, 3 s hop"]
+        L2 --> L3["speaker_encoder.onnx"]
+        L2 --> L4["spoof_detector.onnx"]
+    end
+    E3 --> L3
+    E7 --> L4
+    L3 --> F["Fusion"]
+    L4 --> F
+    E6 --> F
+    F --> SS["SessionScores<br/>median of 5 windows"]
+    SS --> V["Verdict + Reason<br/>shown to the user"]
 ```
 
 **Audio contract.** Every path — microphone, file, WebRTC track — normalises to 16 kHz mono float. The
@@ -438,6 +558,23 @@ text reaches the LLM.
 **Aimed at who actually loses money.** The family-alert path exists because the people most often
 targeted by KYC, digital-arrest and OTP scams are the least likely to interpret a risk score
 themselves. Above threshold, a trusted contact is notified automatically.
+
+---
+
+## Technology choices
+
+Each of these was picked against a specific constraint, and in two cases the obvious option was
+rejected for a measurable reason.
+
+| Choice | Why it, and not the obvious alternative |
+|---|---|
+| **ONNX Runtime** for inference | Both models ship as ONNX with the mel front end folded into the graph, so the feature arithmetic exists once, in Python, validated against the PyTorch reference — rather than re-implemented in Kotlin where it could drift silently. Conversion parity is published in `manifest.json`. |
+| **`io.getstream:stream-webrtc-android`** | Google's `org.webrtc:google-webrtc` was last published in 2021 and its `AudioTrack` exposes **no sink API at all** — and the sink is the entire point, since tapping remote PCM is what makes voice verification on a call possible. Verified before any code was written. |
+| **Vosk** for speech-to-text | Accepts raw PCM, runs fully offline, and ships Hindi and English. A cloud STT would have meant uploading call audio, which contradicts the core privacy property. 134 MB on disk is the price of that. |
+| **Groq / llama-3.3-70b** for semantics | The only cloud component, and only transcript *text* leaves the device. Sub-second at conversational latency; every failure path degrades to the deterministic layers rather than blocking a verdict. |
+| **Room** for persistence | Ten related entities with real queries across them. A key-value store would have collapsed the evidence-to-interaction-to-incident relationships this app reasons over. |
+| **`MediaRecorder.AudioSource.MIC` only** | `VOICE_CALL`, `VOICE_UPLINK` and `VOICE_DOWNLINK` are signature-only and are refused outright, not attempted as a fallback. Room audio on speakerphone is the same signal a person standing nearby would hear — the unprivileged route, taken deliberately. |
+| **Jetpack Compose in an overlay window** | The in-call surface has no Activity behind it, so the overlay supplies its own `LifecycleOwner` and `SavedStateRegistryOwner`. Compose made the escalation ladder one declarative tree instead of four inflated layouts. |
 
 ---
 
