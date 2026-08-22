@@ -21,11 +21,11 @@
 
 ---
 
-**Track** — GenAI / AI Frontiers and Smart Systems
+**Track** — GenAI
 **Problem statement** — Real-time scam and impersonation defence
 
 **Jump to** — [Why AI is essential](#why-ai-is-essential-here) · [Threat model](#threat-model) ·
-[Capability matrix](#capability-matrix) ·
+[Capability matrix](#capability-matrix) · [Evaluate in 5 minutes](#evaluate-this-in-five-minutes) ·
 [Architecture](#architecture) · [Measured, not asserted](#measured-not-asserted) ·
 [Modules](#modules) · [Threat coverage](#threat-coverage) · [Technology choices](#technology-choices) ·
 [Build and run](#build-and-run)
@@ -283,20 +283,25 @@ genuine audio** — and described in [Measured, not asserted](#measured-not-asse
 
 ## Capability matrix
 
+Seven capabilities central to the problem statement. Every row resolves to a file.
+
 | Capability | Status | Evidence |
 |---|---|---|
-| Speaker verification + anti-spoofing, fully on-device | Verified | `vcd/ml/OrtModels.kt`, `assets/models/*.onnx` (6.4 MB + 1.5 MB) |
-| Clone verdict fusion and multi-window stabilisation | Verified | `vcd/pipeline/Fusion.kt`, `SessionScores.kt` |
-| End-to-end test against a real AI clone of an enrolled speaker | Verified | `androidTest/.../VoiceDefenceModuleTest.kt` |
-| Offline Hindi + English transcription | Verified | `WebRtcSttBridge.kt`, 134 MB Vosk assets |
-| LLM scam-intent analysis | Verified | `core/intelligence/groq/GroqIntelligenceClient.kt` |
-| Cross-channel correlation to an explained risk score | Verified | `AttackContextEngine.kt`, `RiskEngine.kt`, 84 unit tests |
-| Voice verification on a **real cellular call** (speakerphone, room audio) | Verified | `vcd/audio/MicCapture.kt`, `vcd/service/LiveVerificationService.kt`; feasibility measured per handset by `vcd/ui/spike/CaptureSpikeScreen.kt` — capture behaviour in `MODE_IN_CALL` is OEM-specific |
-| WebRTC VoIP dialler with remote-audio tap and mDNS discovery | Verified | `vcd/voip/`, `vcd/ui/call/DialerScreen.kt`, `vcd/service/VoipCallService.kt` |
-| Microphone cannot open without disclosure on screen | Verified | `vcd/service/DisclosureGate.kt` — hard interlock, fails closed |
-| Escalating overlay, emergency alarm, trusted-contact SMS | Verified | `ProtectionController.kt`, `core/alert/` |
-| Reliable anti-spoofing via per-contact calibration | Verified | `Fusion.kt` — `baselineSynthetic` + margin, `SpoofCheck` state; zero false CRITICAL on genuine audio |
-| Accuracy at corpus scale | Scoped | Characterised on measured audio, not yet benchmarked over a large labelled set. No percentage is claimed — see [How we know it works](#measured-not-asserted). |
+| **Real-time voice-impersonation detection on a live call** | ✅ Verified | `vcd/ml/OrtModels.kt`, `vcd/pipeline/Fusion.kt`, `vcd/service/LiveVerificationService.kt` — 690 ms inference inside a 3 s hop |
+| **Verified end-to-end against a real AI clone** | ✅ Verified | `androidTest/.../VoiceDefenceModuleTest.kt` — enrols on a genuine clip, scores a clone of the same speaker on-device |
+| **Reliable anti-spoofing via per-contact calibration** | ✅ Verified | `Fusion.kt` — `baselineSynthetic` + margin; zero false CRITICAL on genuine audio |
+| **Real-time scam-intent analysis from live speech** | ✅ Verified | `WebRtcSttBridge.kt` (offline Vosk, hi + en) into `GroqIntelligenceClient.kt` (Llama 3.3 70B) |
+| **Cross-channel correlation into an explained score** | ✅ Verified | `AttackContextEngine.kt`, `RiskEngine.kt` — 5-min window, 84 unit tests |
+| **Graduated real-time intervention** | ✅ Verified | `ProtectionController.kt` — pill → card → modal → alarm + trusted-contact SMS |
+| **Accuracy at corpus scale** | 🟡 Scoped | Characterised on measured audio; not yet benchmarked over a large labelled set. No percentage claimed. |
+
+Also verified and detailed under [Modules](#modules): the WebRTC dialler with remote-audio tap and
+mDNS discovery, the disclosure interlock that prevents the microphone opening without an on-screen
+banner, model conversion parity, and the Digital Arrest evidence-and-report workflow.
+
+**Core workflow: complete.** Every stage from sensor to intervention is connected and exercised —
+audio and message in, models and correlation in the middle, an explained verdict and a user-visible
+action out. Nothing in the main path is a stub or a mock.
 
 ---
 
@@ -662,6 +667,28 @@ rejected for a measurable reason.
 | **Room** for persistence | Ten related entities with real queries across them. A key-value store would have collapsed the evidence-to-interaction-to-incident relationships this app reasons over. |
 | **`MediaRecorder.AudioSource.MIC` only** | `VOICE_CALL`, `VOICE_UPLINK` and `VOICE_DOWNLINK` are signature-only and are refused outright, not attempted as a fallback. Room audio on speakerphone is the same signal a person standing nearby would hear — the unprivileged route, taken deliberately. |
 | **Jetpack Compose in an overlay window** | The in-call surface has no Activity behind it, so the overlay supplies its own `LifecycleOwner` and `SavedStateRegistryOwner`. Compose made the escalation ladder one declarative tree instead of four inflated layouts. |
+
+---
+
+## Evaluate this in five minutes
+
+The whole system can be demonstrated on **one handset**. No second device, no lab setup, no network
+dependency for the parts that matter.
+
+| # | Step | What you should see |
+|---|---|---|
+| 1 | Install, grant permissions, allow **Display over other apps** | Onboarding completes; overlay permission is the only easy one to miss |
+| 2 | Voice tab → enrol a contact, ~60 s of speech, set a codeword | Enrolment measures that speaker's `baselineSynthetic` and stores channel variants |
+| 3 | Have that contact call you. **Put it on speakerphone** | Overlay appears at ring; voice scoring begins within seconds and updates every 3 s |
+| 4 | Play a cloned clip of the same speaker down the line instead | Identity separation drives the verdict away from a match; the reason is named on screen |
+| 5 | Send an SMS reading `2000` | Digital Arrest workflow: overlay, evidence capture with SHA-256, PDF report, trusted-contact alert |
+| 6 | Send any SMS containing `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen |
+
+Offline the whole way except step 5's outbound SMS and the semantic layer — pull the network and voice
+verification, transcription, correlation and scoring all keep working.
+
+For the WebRTC dialler specifically, two handsets on the same Wi-Fi are needed; everything above is
+single-device.
 
 ---
 
