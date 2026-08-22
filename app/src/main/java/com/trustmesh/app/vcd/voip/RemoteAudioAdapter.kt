@@ -155,6 +155,34 @@ class RemoteAudioAdapter : AudioTrackSink {
         return AudioWindow(samples, startSampleIndex, AudioWindow.Provenance.REMOTE_VOIP)
     }
 
+    /** Source-sample cursor for the streaming STT tap, independent of the windowed ML reader. */
+    @Volatile private var sttConsumed = 0L
+
+    /**
+     * Returns remote audio captured since the last call, resampled to 16 kHz, or null if none.
+     *
+     * This is the streaming tap speech-to-text needs: continuous, non-overlapping chunks fed to the
+     * recogniser as they arrive, rather than the fixed overlapping windows the ML path uses. Feeding
+     * Vosk overlapping 4 s blocks every 3 s made it lag several seconds and re-transcribe the same
+     * words; a steady stream of new audio is what it is designed for.
+     */
+    fun drainForStt(): FloatArray? {
+        val buffer = ring ?: return null
+        val rate = sourceRate
+        if (rate <= 0) return null
+        val total = buffer.samplesWritten
+        var newCount = total - sttConsumed
+        if (newCount <= 0L) return null
+        // If STT fell behind, take the newest bufferful and accept a gap rather than reading
+        // samples that have already been overwritten.
+        val cap = buffer.capacity.toLong()
+        if (newCount > cap) newCount = cap
+        val raw = buffer.readLatest(newCount.toInt()) ?: return null
+        sttConsumed = total
+        return if (rate == AudioConstants.SAMPLE_RATE) raw
+        else SincResampler.resample(raw, rate, AudioConstants.SAMPLE_RATE)
+    }
+
     /** How many source-rate samples are needed to yield one 16 kHz analysis window. */
     private fun sourceSamplesForWindow(rate: Int): Int {
         val exact = AudioConstants.WINDOW_SAMPLES.toLong() * rate / AudioConstants.SAMPLE_RATE
@@ -181,6 +209,7 @@ class RemoteAudioAdapter : AudioTrackSink {
         val capacity = sourceSamplesForWindow(sampleRate) * RING_WINDOWS
         ring?.zeroize()
         ring = AudioRingBuffer(capacity)
+        sttConsumed = 0L
         sourceRate = sampleRate
         sourceChannels = channels
         Log.i(TAG, "remote track format: $sampleRate Hz, $channels ch; ring holds $capacity samples")
@@ -198,6 +227,7 @@ class RemoteAudioAdapter : AudioTrackSink {
         ring = null
         sourceRate = 0
         sourceChannels = 0
+        sttConsumed = 0L
         java.util.Arrays.fill(scratch, 0f)
         _diagnostics.value = CallDiagnostics()
     }

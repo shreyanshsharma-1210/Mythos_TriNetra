@@ -46,6 +46,8 @@ class EnrollViewModel(private val app: VcdApp) : ViewModel() {
         val stage: Stage = Stage.CONSENT,
         val name: String = "",
         val relationship: String = "",
+        /** Optional shared-secret codeword/question a clone can't know. Empty = none. */
+        val challenge: String = "",
         val consentAtEpochMs: Long? = null,
         val promptIndex: Int = 0,
         val recording: Boolean = false,
@@ -76,6 +78,7 @@ class EnrollViewModel(private val app: VcdApp) : ViewModel() {
 
     fun setName(v: String) = _state.update { it.copy(name = v) }
     fun setRelationship(v: String) = _state.update { it.copy(relationship = v) }
+    fun setChallenge(v: String) = _state.update { it.copy(challenge = v) }
 
     fun acceptConsent() = _state.update {
         it.copy(stage = Stage.DETAILS, consentAtEpochMs = System.currentTimeMillis())
@@ -198,6 +201,7 @@ class EnrollViewModel(private val app: VcdApp) : ViewModel() {
                         voiceprints = variants,
                         enrolledSeconds = seconds,
                         consentAcknowledgedAtEpochMs = s.consentAtEpochMs ?: 0L,
+                        challenge = s.challenge.ifBlank { null },
                     )
                 }.onSuccess { id ->
                     _state.update {

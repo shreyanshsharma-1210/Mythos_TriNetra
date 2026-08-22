@@ -26,6 +26,8 @@ import com.trustmesh.app.core.events.RiskLevel
 import com.trustmesh.app.core.firewall.OverlayPermissionHelper
 import com.trustmesh.app.core.incident.IncidentStatus
 import com.trustmesh.app.core.incident.SecurityIncidentManager
+import com.trustmesh.app.core.intelligence.risk.RiskEngine
+import com.trustmesh.app.core.voicescan.VoiceScanController
 import com.trustmesh.app.interaction.InteractionManager
 import com.trustmesh.app.ui.theme.TrustMeshTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +61,16 @@ object ProtectionController {
     private var activeCallStartTimeMs = 0L
     private var activeCallDurationSeconds = 0L
     var summaryDismissDelayMs = 5000L
+
+    /**
+     * When the current call's overlay was raised.
+     *
+     * The overlay picks its interaction out of a shared list that also holds previous calls, so
+     * without a floor it will happily render the *last* caller's risk score for the first second or
+     * two of a new call — which is the "it starts from the previous cached value" problem. Anything
+     * older than this instant belongs to a call that is over.
+     */
+    private var callSessionStartedAtMs = 0L
 
     private val dismissHandler = Handler(Looper.getMainLooper())
     private val dismissRunnable = Runnable { hideOverlay("summary_timeout") }
@@ -95,6 +107,14 @@ object ProtectionController {
 
     private var currentLifecycleOwner: MyLifecycleOwner? = null
     private val viewModelStore = ViewModelStore()
+
+    /**
+     * Slack on [callSessionStartedAtMs] when matching interactions to the current call.
+     *
+     * The screening service normalises the call event a moment before the overlay is raised, so an
+     * exact floor would reject the very interaction this overlay exists to show.
+     */
+    private const val CALL_MATCH_GRACE_MS = 5_000L
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -166,6 +186,13 @@ object ProtectionController {
             hasShownSummary = false
             activeCallDurationSeconds = 0L
             SecurityIncidentManager.dismissAllActiveIncidents()
+            // A new call is assessed from zero. Nothing the previous caller scored — cached
+            // assessment, finished voice-analysis run, or an interaction still sitting at the head
+            // of the list — is allowed to seed it.
+            callSessionStartedAtMs = System.currentTimeMillis()
+            RiskEngine.resetForNewCall()
+            VoiceScanController.resetForNewCall()
+            maybeStartScanFromCaller(context, callerName, callerNumber)
         }
         if (initialState == CallOverlayState.SUMMARY) {
             hasShownSummary = true
@@ -210,17 +237,29 @@ object ProtectionController {
                     val state by overlayState.collectAsState()
                     val interactions by InteractionManager.interactions.collectAsState()
                     val incidents by SecurityIncidentManager.incidents.collectAsState()
+                    val scan by VoiceScanController.state.collectAsState()
                     val activeIncident = incidents.firstOrNull { it.status == IncidentStatus.ACTIVE }
 
+                    // Only interactions belonging to *this* call are eligible. Without the floor the
+                    // head of the list is often the previous call, and the overlay opens showing
+                    // that caller's score instead of starting at zero.
+                    // Call interactions only, and no fallback to "whatever is newest". A message
+                    // arriving mid-call is newer than the call itself, so an untyped fallback hands
+                    // the call overlay an SMS's title, score and scam category instead of the
+                    // caller's.
                     val currentInteraction = interactions.firstOrNull {
-                        it.evidence.contains("Incoming call") || it.evidence.contains("Outgoing call") || it.appName == "Phone"
-                    } ?: interactions.firstOrNull()
+                        it.timestampMs >= callSessionStartedAtMs - CALL_MATCH_GRACE_MS &&
+                            (it.evidence.contains("Incoming call") || it.evidence.contains("Outgoing call") || it.appName == "Phone")
+                    }
                     val isIncidentRelated = activeIncident != null && (currentInteraction == null || activeIncident.relatedInteractionIds.contains(currentInteraction.id))
-                    val riskLevel = if (isIncidentRelated) {
+                    val baseRiskLevel = if (isIncidentRelated) {
                         activeIncident!!.severity
                     } else {
                         currentInteraction?.riskLevel ?: RiskLevel.LOW
                     }
+                    // A concluded voice-analysis run is a direct measurement of this call's audio,
+                    // so it owns the level once it has one. See VoiceScanState.effectiveRiskLevel.
+                    val riskLevel = scan.effectiveRiskLevel(baseRiskLevel)
                     val callerIdentity = currentInteraction?.callerIdentity
                     val callerReputation = currentInteraction?.callerReputation
 
@@ -235,10 +274,12 @@ object ProtectionController {
                             callerReputation = callerReputation,
                             fallbackName = callerName,
                             fallbackNumber = callerNumber,
-                            riskLevel = riskLevel,
+                            riskLevel = baseRiskLevel,
                             riskAssessment = currentInteraction?.riskAssessment,
                             activeIncident = if (isIncidentRelated) activeIncident else null,
                             activeCallDurationSeconds = activeCallDurationSeconds,
+                            scan = scan,
+                            currentInteraction = currentInteraction,
                             onDismiss = { hideOverlay("user_dismissed") }
                         )
                     }
@@ -430,6 +471,24 @@ object ProtectionController {
             Log.d(TAG, "WindowParams updated for state=$state riskLevel=$riskLevel")
         } catch (e: Exception) {
             Log.e(TAG, "updateViewLayout failed — non-fatal", e)
+        }
+    }
+
+    /**
+     * Starts a voice-analysis run when the caller themselves carries a control code.
+     *
+     * Kept alongside the SMS trigger because a demo line dialling in from a number containing the
+     * code should behave the same as the code arriving by message — the run is about the audio on
+     * the call either way.
+     */
+    private fun maybeStartScanFromCaller(context: Context, callerName: String, callerNumber: String) {
+        val blob = "$callerName $callerNumber"
+        when {
+            blob.contains(VoiceScanController.CODE_SYNTHETIC) ->
+                VoiceScanController.startSyntheticScan(context.applicationContext)
+
+            blob.contains(VoiceScanController.CODE_GENUINE) ->
+                VoiceScanController.startGenuineScan(context.applicationContext)
         }
     }
 

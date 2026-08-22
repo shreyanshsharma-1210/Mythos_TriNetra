@@ -60,6 +60,12 @@ data class ContactEntity(
     val variantLabels: String? = null,
     /** Per-variant anti-spoofing baselines, comma-separated in the same order. "" means unmeasured. */
     val variantBaselines: String? = null,
+    /**
+     * A shared-secret challenge for this contact — a codeword or question agreed in advance,
+     * Keystore-wrapped exactly like the voiceprint. Surfaced during a call so the user can ask for
+     * it: a perfect voice clone does not carry a secret it was never told. Null when none was set.
+     */
+    val challengeCipher: ByteArray? = null,
 ) {
     override fun equals(other: Any?) = this === other ||
         (other is ContactEntity && id == other.id && name == other.name &&
@@ -96,7 +102,7 @@ interface ContactDao {
 
 @Database(
     entities = [ContactEntity::class, CallHistoryEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class VcdDatabase : RoomDatabase() {
@@ -130,6 +136,16 @@ abstract class VcdDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE contacts ADD COLUMN variantLabels TEXT")
                 db.execSQL("ALTER TABLE contacts ADD COLUMN variantBaselines TEXT")
+            }
+        }
+
+        /**
+         * Adds the shared-secret challenge column. Additive; existing rows get NULL, read as "no
+         * codeword set", so no voiceprint is touched.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE contacts ADD COLUMN challengeCipher BLOB")
             }
         }
 

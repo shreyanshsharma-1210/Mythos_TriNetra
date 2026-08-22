@@ -99,7 +99,9 @@ fun ActiveCallScreen(state: CallState, onDismiss: () -> Unit) {
     }
 
     val connected = state.stage == CallStage.CONNECTED
-    val level = if (connected) state.scores.stableLevel else Level.INDETERMINATE
+    // With no saved voice there is nothing to verify against, so the screen must stay neutral rather
+    // than turning red/green off a synthetic-only score. Verdicts require an enrolled contact.
+    val level = if (connected && state.contactId != null) state.scores.stableLevel else Level.INDETERMINATE
     val verdict = state.scores.stableVerdict
 
     val top by animateColorAsState(
@@ -163,6 +165,13 @@ fun ActiveCallScreen(state: CallState, onDismiss: () -> Unit) {
                 level = level,
                 onClick = { showDetail = !showDetail },
             )
+
+            // The shared-secret challenge: the one check a perfect clone cannot pass. Shown whenever
+            // a codeword was set for this contact, because it works even when the models cannot.
+            state.challenge?.takeIf { it.isNotBlank() }?.let { codeword ->
+                Spacer(Modifier.height(14.dp))
+                CodewordChallenge(codeword)
+            }
 
             if (connected) {
                 val intelState by com.trustmesh.app.callaudio.webrtc.WebRtcIntelligenceCoordinator.state.collectAsStateWithLifecycle()
@@ -243,16 +252,18 @@ private fun VerificationBadge(
     val headline = when {
         !connected && state.contactId != null -> "Will check against ${state.contactName}"
         !connected -> "No contact selected"
+        // No saved voice takes precedence over "listening": there is nothing to compare the caller
+        // against, so the app must not imply it is running an identity or clone check.
+        state.contactId == null -> "No saved voice"
         listening -> "Checking voice…"
-        state.contactId == null -> "Synthetic-speech check only"
         else -> StatusColors.badge(level)
     }
 
     val sub = when {
         !connected && state.contactId != null -> "Voice protection ready"
         !connected -> "Identity will not be checked on this call"
+        state.contactId == null -> "Identity and clone checks are off for this call"
         listening -> "Needs a few seconds of speech"
-        state.contactId == null -> "No contact chosen, so identity is not checked"
         level == Level.SAFE -> "Matches ${state.contactName}, no signs of synthesis"
         level == Level.SUSPICIOUS -> "Tap for what was measured"
         level == Level.CRITICAL -> "Do not act on this call. Tap for detail."
@@ -285,6 +296,50 @@ private fun VerificationBadge(
             TextButton(onClick = onClick) {
                 Text("Detail", color = Color.White, fontSize = 13.sp)
             }
+        }
+    }
+}
+
+/**
+ * The shared-secret prompt. A cloned voice can sound identical and still not know a codeword agreed
+ * in advance, so this is the app's most reliable check — and the only one that does not depend on a
+ * model. Revealed on tap so a shoulder-surfer or a recording of the screen does not capture it.
+ */
+@Composable
+private fun CodewordChallenge(codeword: String) {
+    var revealed by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.16f))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Ask for the codeword", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(
+            "The real person you enrolled knows this. A voice clone does not.",
+            color = Color.White.copy(alpha = 0.85f),
+            fontSize = 13.sp,
+        )
+        if (revealed) {
+            Text(
+                codeword,
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                fontSize = 22.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                "They should say this back. If they can't, treat the call as unverified.",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.sp,
+            )
+        } else {
+            TextButton(
+                onClick = { revealed = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White),
+            ) { Text("Reveal codeword") }
         }
     }
 }

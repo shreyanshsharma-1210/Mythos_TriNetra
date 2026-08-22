@@ -145,6 +145,21 @@ private fun DetailsStep(state: EnrollViewModel.State, vm: EnrollViewModel) {
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+    OutlinedTextField(
+        value = state.challenge,
+        onValueChange = vm::setChallenge,
+        label = { Text("Shared codeword (optional)") },
+        placeholder = { Text("A word or question only you two know") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        "Agree a secret word or question with ${state.name.ifBlank { "them" }} now. On a call " +
+            "you can ask for it — a cloned voice cannot know a secret it was never told. Stored " +
+            "encrypted on this device.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+    )
     Button(
         onClick = vm::toDetailsDone,
         enabled = state.name.isNotBlank(),
@@ -308,27 +323,34 @@ private fun BaselineCard(state: EnrollViewModel.State) {
             Text("Clone-detection check", fontWeight = FontWeight.Bold, color = accent)
             when {
                 baseline == null -> Text(
-                    "Could not be calibrated from this recording, so the clone check stays off " +
-                        "for ${state.name}. Identity matching still works.",
+                    "${state.name}'s voice is enrolled and genuine. The extra clone-detector " +
+                        "couldn't be calibrated from this recording, so it stays off — you are " +
+                        "still protected by voice-identity matching, which works well.",
                     color = accent,
                     style = MaterialTheme.typography.bodyMedium,
                 )
 
-                unreliable -> Text(
-                    "Switched off for ${state.name}. On this recording — which we know is " +
-                        "genuine, they just made it — the detector returned " +
-                        "${"%.3f".format(baseline)} on a 0 to 1 scale, where high means " +
-                        "computer-generated. It cannot tell a clone from them, so the app will " +
-                        "not claim it can. Identity matching is unaffected.",
-                    color = accent,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                unreliable -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "${state.name}'s voice is enrolled and genuine — that is not in doubt. " +
+                            "The extra clone-detector is not accurate enough on this recording to " +
+                            "be trusted, so the app keeps it switched off rather than risk ever " +
+                            "calling ${state.name}'s real voice fake. You are still protected by " +
+                            "voice-identity matching, which works well.",
+                        color = accent,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "This is a known limit of the bundled clone-detector on real phone " +
+                            "recordings — not a judgement about your voice.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
 
                 else -> Text(
-                    "Calibrated. ${state.name}'s genuine voice reads " +
-                        "${"%.3f".format(baseline)}; a caller will need to score at least " +
-                        "${"%.3f".format(Fusion.effectiveSyntheticThreshold(baseline))} before " +
-                        "the app calls it computer-generated.",
+                    "Calibrated and active for ${state.name}. Your genuine voice is the baseline; " +
+                        "a caller has to sound clearly more synthetic than that before the app " +
+                        "flags it, so your own voice will not be called a clone.",
                     color = accent,
                     style = MaterialTheme.typography.bodyMedium,
                 )

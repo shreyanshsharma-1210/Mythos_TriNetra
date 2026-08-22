@@ -32,6 +32,26 @@ android {
         val propKey: String? = localProperties.getProperty("groq.api.key")
         val groqApiKey = envKey ?: propKey ?: ""
         buildConfigField("String", "GROQ_API_KEY", "\"$groqApiKey\"")
+
+        val envTextbeeKey: String? = System.getenv("TEXTBEE_API_KEY")
+        val propTextbeeKey: String? = localProperties.getProperty("textbee.api.key")
+        val textbeeApiKey = envTextbeeKey ?: propTextbeeKey ?: "txb_5mUeBd04Qg9y0jyN1vsTj3HjwwzlvO1o"
+        buildConfigField("String", "TEXTBEE_API_KEY", "\"$textbeeApiKey\"")
+
+        val envFamilyNum: String? = System.getenv("FAMILY_ALERT_NUMBERS")
+        val propFamilyNum: String? = localProperties.getProperty("family.alert.numbers") ?: localProperties.getProperty("family.alert.number")
+        val familyAlertNumbers = envFamilyNum ?: propFamilyNum ?: "+91 9244578192,+91 6261474664"
+        buildConfigField("String", "FAMILY_ALERT_NUMBERS", "\"$familyAlertNumbers\"")
+
+        val envDeviceId: String? = System.getenv("TEXTBEE_DEVICE_ID")
+        val propDeviceId: String? = localProperties.getProperty("textbee.device.id")
+        val textbeeDeviceId = envDeviceId ?: propDeviceId ?: "6a893b906a4667e3e37b7906"
+        buildConfigField("String", "TEXTBEE_DEVICE_ID", "\"$textbeeDeviceId\"")
+
+        val envSimSlot: String? = System.getenv("TEXTBEE_SIM_SLOT")
+        val propSimSlot: String? = localProperties.getProperty("textbee.sim.slot")
+        val textbeeSimSlot = (envSimSlot ?: propSimSlot ?: "0").toIntOrNull() ?: 0
+        buildConfigField("int", "TEXTBEE_SIM_SLOT", "$textbeeSimSlot")
     }
 
     buildTypes {

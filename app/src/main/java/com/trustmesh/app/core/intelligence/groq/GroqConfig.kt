@@ -9,8 +9,8 @@ object GroqConfig {
     private const val KEY_GROQ_API_KEY = "groq_api_key"
     private const val KEY_MODEL = "groq_model_name"
 
-    const val DEFAULT_MODEL = "llama-3.1-8b-instant"
-    const val FAST_MODEL = "llama-3.1-8b-instant"
+    const val DEFAULT_MODEL = "llama-3.3-70b-versatile"
+    const val FAST_MODEL = "llama-3.3-70b-versatile"
     const val COMPOUND_MINI_MODEL = "groq/compound-mini"
     const val GPT_OSS_20B_MODEL = "openai/gpt-oss-20b"
     const val QWEN_27B_MODEL = "qwen/qwen3.6-27b"

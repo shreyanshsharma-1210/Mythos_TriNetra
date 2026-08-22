@@ -26,6 +26,8 @@ data class EnrolledContact(
     val baselineSynthetic: Float?,
     /** Channel conditions this contact has a voiceprint for, e.g. mic, voip-wb, voip-nb. */
     val variantLabels: List<String>,
+    /** True when a shared-secret challenge was set for this contact. The secret itself is not held here. */
+    val hasCodeword: Boolean = false,
 ) {
     /** True once this contact has prints for call-like channels, not only the microphone. */
     val channelMatched: Boolean get() = variantLabels.size > 1
@@ -59,6 +61,7 @@ class ContactRepository(
         voiceprints: List<Voiceprint>,
         enrolledSeconds: Float,
         consentAcknowledgedAtEpochMs: Long,
+        challenge: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         require(name.isNotBlank()) { "a contact needs a name" }
         require(voiceprints.isNotEmpty()) { "refusing to store a contact with no voiceprint" }
@@ -93,8 +96,25 @@ class ContactRepository(
                 variantBaselines = voiceprints.joinToString(",") {
                     it.baselineSynthetic?.toString() ?: ""
                 },
+                challengeCipher = challenge?.trim()?.takeIf { it.isNotEmpty() }
+                    ?.let { VoiceprintCrypto.encrypt(it.toByteArray(Charsets.UTF_8)) },
             )
         )
+    }
+
+    /**
+     * Decrypts this contact's shared-secret challenge, or null if none was set / it will not
+     * decrypt. Only read when a call with this contact is on screen, so the plaintext lives no
+     * longer than the call UI that needs it.
+     */
+    suspend fun loadChallenge(id: Long): String? = withContext(Dispatchers.IO) {
+        val cipher = dao.getById(id)?.challengeCipher ?: return@withContext null
+        try {
+            String(VoiceprintCrypto.decrypt(cipher), Charsets.UTF_8)
+        } catch (t: Throwable) {
+            Log.e(TAG, "challenge for contact $id failed to decrypt", t)
+            null
+        }
     }
 
     /**
@@ -165,6 +185,7 @@ class ContactRepository(
         baselineSynthetic = baselineSynthetic,
         variantLabels = variantLabels?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
             ?: listOf(LEGACY_LABEL),
+        hasCodeword = challengeCipher != null,
     )
 
     private companion object {

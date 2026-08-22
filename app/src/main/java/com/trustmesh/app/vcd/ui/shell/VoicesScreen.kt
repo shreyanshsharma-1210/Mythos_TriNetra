@@ -212,6 +212,15 @@ private fun VoiceRow(contact: EnrolledContact, onVerify: () -> Unit, onDelete: (
                     else -> "Voice match and clone check both active" to StatusColors.safe
                 }
                 Text(note, fontSize = 12.sp, color = colour, fontWeight = FontWeight.SemiBold)
+                // The codeword is the one check a clone can't beat, so make its presence visible.
+                Text(
+                    if (contact.hasCodeword) "🔑 Codeword set — ask for it on a call"
+                    else "No codeword — re-enrol to add one",
+                    fontSize = 12.sp,
+                    color = if (contact.hasCodeword) StatusColors.safe
+                    else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    fontWeight = if (contact.hasCodeword) FontWeight.SemiBold else FontWeight.Normal,
+                )
             }
         },
     )

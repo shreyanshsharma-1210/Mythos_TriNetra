@@ -24,6 +24,7 @@ open class VcdApp : Application() {
                 VcdDatabase.MIGRATION_1_2,
                 VcdDatabase.MIGRATION_2_3,
                 VcdDatabase.MIGRATION_3_4,
+                VcdDatabase.MIGRATION_4_5,
             )
             .build()
     }

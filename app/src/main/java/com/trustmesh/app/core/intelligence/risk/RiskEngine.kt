@@ -98,8 +98,28 @@ object RiskEngine {
             result = 31 * result + event.id.hashCode()
             result = 31 * result + event.timestamp.hashCode()
             result = 31 * result + event.type.hashCode()
+            result = 31 * result + event.metadata.hashCode()
         }
         return result
+    }
+
+    /** Invalidate a specific interaction's cache entry */
+    fun invalidateCache(interactionId: String) {
+        assessmentCache.remove(interactionId)
+    }
+
+    /**
+     * Drops every memoized assessment.
+     *
+     * Called when a new call starts. The cache exists to avoid recomputing the same inputs during a
+     * burst, not to carry a verdict between calls — a fresh caller must be scored from zero rather
+     * than inheriting the last call's number, which is what a stale entry surviving into the next
+     * call would produce.
+     */
+    fun resetForNewCall() {
+        val size = assessmentCache.size
+        assessmentCache.clear()
+        Log.d(TAG, "Assessment cache cleared for new call ($size entr${if (size == 1) "y" else "ies"} dropped)")
     }
 
     /** Clears the memoized assessments (used during unit testing to avoid cross-test pollution) */
