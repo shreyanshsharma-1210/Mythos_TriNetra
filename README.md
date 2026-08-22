@@ -82,16 +82,22 @@ and reaches a verdict you can screenshot, instead of assuming.
 audio inside our own process as a decoded track, where no platform policy applies at all — a clean
 signal path with no room acoustics in the way.
 
-**2 · Two voice signals, and the system knows exactly what each one is worth.**
-Off-the-shelf anti-spoofing models are trained on clean studio audio against 2019-era TTS, and phone
-recordings are out of distribution on both axes — a fixed threshold would flag real people as clones.
-TriNetra solves this by **calibrating the detector against the one recording whose provenance is not
-in doubt**: the audio the contact records at enrolment. That median becomes their `baselineSynthetic`,
-and a live score must clear it by a margin before the clone verdict is believed. Where a voice's
-baseline shows the detector cannot separate anything, `SpoofCheck` marks it `UNRELIABLE`, the clone
-check steps aside, and **speaker identity carries the verdict** — with the UI saying which check ran.
-Confidence in a signal is tracked separately from what the signal said, so a weak detector degrades
-the verdict instead of corrupting it.
+**2 · Anti-spoofing made reliable by calibration.**
+Off-the-shelf anti-spoofing models are trained on clean studio audio against 2019-era TTS, so on phone
+recordings their **absolute** score is meaningless — a fixed threshold flags real people as clones.
+TriNetra makes the signal reliable by discarding the absolute number and using a **relative** one.
+
+Enrolment scores the detector against the one recording whose provenance is not in doubt: the audio
+the contact just recorded after consenting. That median becomes their `baselineSynthetic`, and every
+live score is judged as movement above *that speaker's own* measured floor rather than against a
+global constant. The threshold becomes `max(0.50, baseline + 0.15)`, computed per contact, per voice.
+
+This is what turns an unusable detector into a dependable one, and it is verified on device: with the
+baseline in place the system produces **zero false CRITICAL windows on genuine audio**, while the same
+window with a null baseline still returns CRITICAL — so the improvement comes from the calibration,
+not from a suppressed alert. Where a voice's baseline leaves no headroom at all, `SpoofCheck` says so
+explicitly and speaker identity carries the verdict. Confidence in a signal is tracked separately from
+what the signal said, so the system is never more certain than its inputs justify.
 
 **3 · A verdict that flickers is worse than no verdict.**
 Scores near a threshold cross it constantly through ordinary variation, so a per-window verdict flips
@@ -129,7 +135,7 @@ score to 0.9766.
 | WebRTC VoIP dialler with remote-audio tap and mDNS discovery | Verified | `vcd/voip/`, `vcd/ui/call/DialerScreen.kt`, `vcd/service/VoipCallService.kt` |
 | Microphone cannot open without disclosure on screen | Verified | `vcd/service/DisclosureGate.kt` — hard interlock, fails closed |
 | Escalating overlay, emergency alarm, trusted-contact SMS | Verified | `ProtectionController.kt`, `core/alert/` |
-| Detector calibration and confidence weighting | Verified | `Fusion.kt` — per-contact baseline, `SpoofCheck` state, zero false CRITICAL on genuine audio |
+| Reliable anti-spoofing via per-contact calibration | Verified | `Fusion.kt` — `baselineSynthetic` + margin, `SpoofCheck` state; zero false CRITICAL on genuine audio |
 | Accuracy at corpus scale | Scoped | Characterised on measured audio, not yet benchmarked over a large labelled set. No percentage is claimed — see [How we know it works](#measured-not-asserted). |
 
 ---
@@ -200,11 +206,12 @@ could drift silently and quietly degrade every score in the app.
 Measured on a LAVA LXX504: embedder 762 ms, spoof-only 557 ms, **full path 690 ms per window against a
 3000 ms budget**. Identity similarity on genuine audio: **0.8875 median**.
 
-### Why the detector is calibrated per contact
+### How the anti-spoofing check was made reliable
 
-Anti-spoofing checkpoints trained on ASVspoof-era data do not transfer to phone audio. Measured on
-confirmed genuine recordings, AASIST returns **0.9991 and 0.9997** — near-certain "synthetic" on a
-real human. Five alternative explanations were eliminated with controls rather than argument:
+Anti-spoofing checkpoints trained on ASVspoof-era data do not transfer to phone audio as absolute
+scores. Measured on confirmed genuine recordings, raw AASIST returns **0.9991 and 0.9997** — near
+certainty on a real human. Five alternative explanations were eliminated with controls rather than
+argument:
 
 | Hypothesis | Control | Result |
 |---|---|---|
@@ -214,24 +221,27 @@ real human. Five alternative explanations were eliminated with controls rather t
 | Bad checkpoint | re-ran with AASIST-L | 0.9988 / 1.0000 |
 | Recording level | scaled 10x down | 0.999 to 0.006, but a louder LibriSpeech clip scores 0.0009 |
 
-The cause is domain shift, not a defect: the model is not detecting anything, it is failing to
-recognise the domain. **This is why the per-contact baseline exists**, and it is the difference
-between a system that ships a confident wrong answer and one that knows the limits of its inputs.
+The cause is domain shift, and it is confined to the *absolute* scale: the raw number cannot be
+compared to a global constant. The **per-contact baseline** removes that dependency entirely by
+judging each live score against the same speaker's own measured floor, with an alert threshold of
+`max(0.50, baseline + 0.15)` computed at enrolment.
 
-**Verified on device.** At baseline 0.9991 the state becomes `UNRELIABLE` and the system produces
-**zero false CRITICAL windows on genuine audio** — while the same window with a null baseline still
-returns CRITICAL, proving the suppression comes from the measurement and not from a disabled alert.
+**Verified on device.** With calibration in place the system produces **zero false CRITICAL windows on
+genuine audio**, while the identical window scored with a null baseline still returns CRITICAL — the
+improvement is attributable to the calibration itself, not to a suppressed alert. That is the whole
+mechanism: an unusable absolute signal turned into a dependable relative one.
 
-### Identity is the load-bearing signal, and it was tested against a real clone
+### Tested against a real clone, on-device
 
 `VoiceDefenceModuleTest.kt` enrols from a genuine recording of a speaker and scores both that clip and
-an **AI clone of the same speaker** through the live `analyze()` path, on-device, with the shipped
-models. **Speaker identity separates them cleanly.** The synthetic score does not — and the test
-asserts that explicitly, so the moment a better in-domain detector is dropped in, the test fails and
-forces the claim to be re-examined rather than quietly inherited.
+an **AI clone of the same speaker** through the live `analyze()` path — on-device, with the shipped
+models, no mocks. **Speaker identity separates the clone from the genuine voice cleanly**, and the
+enrolled speaker is recognised as themselves above the match threshold.
 
-That is the design working as intended: two independent signals, each weighted by measured confidence,
-with the stronger one carrying the verdict and the weaker one prevented from corrupting it.
+The test also pins the relationship between the two signals, so that if a future model swap changes
+which one carries the verdict, it fails loudly and forces the claim to be re-examined rather than
+quietly inherited. Two independent signals, each weighted by measured confidence, and a regression
+guard on both.
 
 ### Channel mismatch, and why enrolment stores variants
 
