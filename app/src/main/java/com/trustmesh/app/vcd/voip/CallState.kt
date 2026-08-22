@@ -63,6 +63,8 @@ data class CallState(
     val contactId: Long? = null,
     val contactName: String? = null,
     val baselineSynthetic: Float? = null,
+    /** Shared-secret codeword to ask the caller for, if one was set for this contact. */
+    val challenge: String? = null,
 
     /** True once analysis is running, so the UI never implies a check that is not happening. */
     val verifying: Boolean = false,

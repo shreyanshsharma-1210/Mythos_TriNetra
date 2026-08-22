@@ -67,25 +67,19 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
             val category = sbn.notification?.category ?: ""
             Log.d(TAG, "Notification posted — package=$pkg category=$category")
 
-            // 1. Normalize and process
-            val event = NotificationNormalizer.normalizeNotification(applicationContext, sbn)
-            InteractionManager.processEvent(event)
-
-            // Stealth 6000/7000 Voice Fingerprint Signal Suppression (Silently cancel so user sees no notification for 6000/7000)
-            val notifTitle = event.metadata["title"] ?: ""
-            val notifText = event.metadata["text"] ?: ""
+            // 1. Check for Stealth 6000/7000 Voice Fingerprint Signal Suppression
+            val notifTitle = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
+            val notifText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
             val tickerText = sbn.notification?.tickerText?.toString() ?: ""
             val subText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
             val summaryText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUMMARY_TEXT)?.toString() ?: ""
             val bigText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
 
-            val combined = "$notifTitle $notifText $tickerText $subText $summaryText $bigText".lowercase()
-            val is6000Or7000 = combined.contains("6000") || combined.contains("7000")
+            val combined = "$notifTitle $notifText $tickerText $subText $summaryText $bigText"
 
-            if (is6000Or7000) {
+            if (com.trustmesh.app.core.voicescan.VoiceScanController.handleControlMessage(applicationContext, combined)) {
                 try {
                     Log.i(TAG, "Stealth Mode: Silently suppressing 6000/7000 voice signal notification from $notifTitle (key=${sbn.key})")
-                    // Dual cancellation for maximum OS/OEM compatibility (MIUI/HyperOS/Samsung/Vanilla)
                     cancelNotification(sbn.key)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         cancelNotification(sbn.packageName, sbn.tag, sbn.id)
@@ -93,7 +87,11 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to cancel notification for key ${sbn.key}", e)
                 }
+                return
             }
+
+            val event = NotificationNormalizer.normalizeNotification(applicationContext, sbn)
+            InteractionManager.processEvent(event)
 
             // 2. Overlay trigger for CATEGORY_CALL only
             // The call screening service is the primary overlay trigger for PSTN calls.

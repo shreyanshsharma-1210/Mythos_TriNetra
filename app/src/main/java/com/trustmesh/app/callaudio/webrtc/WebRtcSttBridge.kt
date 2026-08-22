@@ -2,7 +2,6 @@ package com.trustmesh.app.callaudio.webrtc
 
 import android.content.Context
 import android.util.Log
-import com.trustmesh.app.vcd.audio.AudioConstants
 import com.trustmesh.app.vcd.voip.RemoteAudioAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -13,7 +12,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -22,15 +20,21 @@ import java.io.File
 /**
  * Bridges the WebRTC [RemoteAudioAdapter] to Vosk on-device STT.
  *
- * Every [POLL_INTERVAL_MS] we pull the latest 3-second audio window from the ring buffer
- * (which is already 16 kHz mono — exactly what Vosk expects), convert Float → Int16 PCM,
- * and feed it to the recognizer. Vosk returns a JSON object with a "text" field when it
- * has a final hypothesis, or a "partial" field mid-utterance.
+ * Feeds Vosk a *continuous stream* of the remote party's 16 kHz audio, in small chunks, the way a
+ * streaming recogniser is designed to be driven — and drives exactly one language model.
  *
- * Hindi model:   assets/models/vosk-model-hi     (~50 MB)
- * English model: assets/models/vosk-model-en-in  (~40 MB)
+ * An earlier version pulled overlapping 4 s windows every 3 s and ran the Hindi and English models
+ * on the same audio, keeping "whichever produced text". That was slow (a several-second lag) and
+ * inaccurate (the wrong-language model transcribed speech into confident gibberish that often won,
+ * and re-fed overlapping audio corrupted the recogniser's running context). This version pulls only
+ * new audio [POLL_INTERVAL_MS] apart via [RemoteAudioAdapter.drainForStt] and feeds one recogniser,
+ * emitting a running partial for a live feel and a final when the recogniser detects an endpoint.
  *
- * Audio never touches disk. The byte scratch buffers are reused across calls.
+ * Models live in assets/models/. The active one is chosen by [ACTIVE_LANG]; both are bundled so the
+ * choice is a one-line change. English-India is the default because it handles Indian-accented
+ * English and common code-mixing far better than feeding English to the Hindi model did.
+ *
+ * Audio never touches disk beyond the one-time model copy Vosk requires out of the APK.
  */
 class WebRtcSttBridge(
     private val context: Context,
@@ -41,39 +45,34 @@ class WebRtcSttBridge(
     val chunks: SharedFlow<SttChunk> = _chunks.asSharedFlow()
 
     private var pollJob: Job? = null
-    private var hiModel: Model? = null
-    private var enModel: Model? = null
-    private var hiRecognizer: Recognizer? = null
-    private var enRecognizer: Recognizer? = null
+    private var model: Model? = null
+    private var recognizer: Recognizer? = null
 
-    // Scratch buffer reused every poll cycle — avoids per-call allocation on the hot path
-    private var pcmScratch = ShortArray(WINDOW_SAMPLES)
+    private var byteScratch = ByteArray(0)
+    private var lastPartial = ""
 
     data class SttChunk(
         val text: String,
         val isFinal: Boolean,
-        val languageCode: String,     // "hi" or "en"
-        val timestampMs: Long = System.currentTimeMillis()
+        val languageCode: String,
+        val timestampMs: Long = System.currentTimeMillis(),
     )
 
     fun start() {
         if (pollJob?.isActive == true) return
         pollJob = scope.launch(Dispatchers.IO) {
-            loadModels()
-            if (hiRecognizer == null && enRecognizer == null) {
-                Log.w(TAG, "No Vosk models available — STT disabled")
+            val rec = loadRecognizer()
+            if (rec == null) {
+                Log.w(TAG, "Vosk model '$ACTIVE_MODEL' unavailable — STT disabled")
                 return@launch
             }
-            Log.i(TAG, "STT bridge started (hi=${hiModel != null}, en=${enModel != null})")
-            // Use LIVE_HOP_SAMPLES (48000 = 3 s) as both the polling interval and the window advance.
-            // latestWindow() takes an absolute sample-index as a hint; we pass the next expected
-            // start to avoid reading the same samples twice.
-            var nextStartSample = 0L
+            recognizer = rec
+            Log.i(TAG, "STT bridge started (lang=$ACTIVE_LANG, model=$ACTIVE_MODEL)")
+
             while (isActive) {
-                val window = adapter.latestWindow(nextStartSample)
-                if (window != null) {
-                    processWindow(window.samples)
-                    nextStartSample = window.startSampleIndex + AudioConstants.LIVE_HOP_SAMPLES
+                val fresh = adapter.drainForStt()
+                if (fresh != null && fresh.isNotEmpty()) {
+                    feed(rec, fresh)
                 }
                 delay(POLL_INTERVAL_MS)
             }
@@ -83,106 +82,87 @@ class WebRtcSttBridge(
     fun stop() {
         pollJob?.cancel()
         pollJob = null
-        hiRecognizer?.close()
-        enRecognizer?.close()
-        hiModel?.close()
-        enModel?.close()
-        hiRecognizer = null
-        enRecognizer = null
-        hiModel = null
-        enModel = null
+        recognizer?.close()
+        model?.close()
+        recognizer = null
+        model = null
+        lastPartial = ""
     }
 
-    private fun loadModels() {
-        // Copy model from assets to cache dir if not already there, then load
-        hiModel = tryLoadModel("vosk-model-hi")
-        enModel = tryLoadModel("vosk-model-en-in")
-        hiRecognizer = hiModel?.let { Recognizer(it, SAMPLE_RATE_F) }
-        enRecognizer = enModel?.let { Recognizer(it, SAMPLE_RATE_F) }
+    private fun loadRecognizer(): Recognizer? {
+        model = tryLoadModel(ACTIVE_MODEL) ?: return null
+        return runCatching { Recognizer(model, SAMPLE_RATE_F) }
+            .onFailure { Log.w(TAG, "Recognizer init failed: ${it.message}") }
+            .getOrNull()
     }
+
+    private fun feed(rec: Recognizer, floatSamples: FloatArray) {
+        val needed = floatSamples.size * 2
+        if (byteScratch.size < needed) byteScratch = ByteArray(needed)
+        val bytes = byteScratch
+        for (i in floatSamples.indices) {
+            val s = (floatSamples[i] * 32767f).toInt().coerceIn(-32768, 32767)
+            bytes[i * 2] = (s and 0xFF).toByte()
+            bytes[i * 2 + 1] = (s shr 8 and 0xFF).toByte()
+        }
+
+        val endpointed = rec.acceptWaveForm(bytes, needed)
+        if (endpointed) {
+            val text = jsonField(rec.result, "text")
+            lastPartial = ""
+            if (text.isNotBlank()) emit(text, isFinal = true)
+        } else {
+            val partial = jsonField(rec.partialResult, "partial")
+            // Only emit when the partial actually grew, so the UI updates smoothly instead of
+            // re-emitting the same string every poll.
+            if (partial.isNotBlank() && partial != lastPartial) {
+                lastPartial = partial
+                emit(partial, isFinal = false)
+            }
+        }
+    }
+
+    private fun emit(text: String, isFinal: Boolean) {
+        scope.launch { _chunks.emit(SttChunk(text, isFinal, ACTIVE_LANG)) }
+    }
+
+    private fun jsonField(json: String, field: String): String =
+        runCatching { JSONObject(json).optString(field, "").trim() }.getOrDefault("")
 
     private fun tryLoadModel(assetDir: String): Model? = runCatching {
         val dest = File(context.filesDir, assetDir)
-        if (!dest.exists()) {
-            copyAssetDir(assetDir, dest)
-        }
+        if (!dest.exists()) copyAssetDir(assetDir, dest)
         if (!dest.exists()) return@runCatching null
         Model(dest.absolutePath)
     }.onFailure { Log.w(TAG, "Could not load Vosk model $assetDir: ${it.message}") }
         .getOrNull()
 
-    /**
-     * Copies an asset directory tree to the app's internal files dir.
-     * Vosk requires the model on the regular filesystem, not inside the APK.
-     */
+    /** Copies an asset directory tree to internal storage; Vosk needs the model on the filesystem. */
     private fun copyAssetDir(assetDir: String, dest: File) {
         val assets = context.assets
         val children = runCatching { assets.list(assetDir) }.getOrNull() ?: return
         if (children.isEmpty()) {
-            // It's a file
             dest.parentFile?.mkdirs()
-            assets.open(assetDir).use { src -> dest.outputStream().use { it.write(src.readBytes()) } }
+            assets.open(assetDir).use { src -> dest.outputStream().use { src.copyTo(it) } }
         } else {
             dest.mkdirs()
-            for (child in children) {
-                copyAssetDir("$assetDir/$child", File(dest, child))
-            }
+            for (child in children) copyAssetDir("$assetDir/$child", File(dest, child))
         }
     }
-
-    private fun processWindow(floatSamples: FloatArray) {
-        if (pcmScratch.size < floatSamples.size) pcmScratch = ShortArray(floatSamples.size)
-        // Convert normalized Float [-1,1] → Int16 PCM
-        for (i in floatSamples.indices) {
-            pcmScratch[i] = (floatSamples[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
-        }
-        val bytes = ShortArray(floatSamples.size) { pcmScratch[it] }.let { shorts ->
-            ByteArray(shorts.size * 2).also { buf ->
-                for (i in shorts.indices) {
-                    buf[i * 2] = (shorts[i].toInt() and 0xFF).toByte()
-                    buf[i * 2 + 1] = (shorts[i].toInt() shr 8 and 0xFF).toByte()
-                }
-            }
-        }
-
-        // Try Hindi first, then English — emit whichever gives a non-blank result
-        val hiResult = hiRecognizer?.let { rec ->
-            val accepted = rec.acceptWaveForm(bytes, bytes.size)
-            if (accepted) parseResult(rec.result, isFinal = true)
-            else parsePartial(rec.partialResult)
-        }
-
-        val enResult = enRecognizer?.let { rec ->
-            val accepted = rec.acceptWaveForm(bytes, bytes.size)
-            if (accepted) parseResult(rec.result, isFinal = true)
-            else parsePartial(rec.partialResult)
-        }
-
-        // Prefer Hindi if it has text; fallback to English
-        val best = when {
-            !hiResult?.text.isNullOrBlank() -> hiResult!!.copy(languageCode = "hi")
-            !enResult?.text.isNullOrBlank() -> enResult!!.copy(languageCode = "en")
-            else -> null
-        }
-        if (best != null) {
-            scope.launch { _chunks.emit(best) }
-        }
-    }
-
-    private fun parseResult(json: String, isFinal: Boolean): SttChunk? = runCatching {
-        val text = JSONObject(json).optString("text", "").trim()
-        if (text.isBlank()) null else SttChunk(text, isFinal, "")
-    }.getOrNull()
-
-    private fun parsePartial(json: String): SttChunk? = runCatching {
-        val text = JSONObject(json).optString("partial", "").trim()
-        if (text.isBlank()) null else SttChunk(text, isFinal = false, languageCode = "")
-    }.getOrNull()
 
     companion object {
         private const val TAG = "WebRtcSttBridge"
-        private const val POLL_INTERVAL_MS = 3000L
+
+        /** ~0.3 s of new audio per feed: low latency, well inside real-time on-device. */
+        private const val POLL_INTERVAL_MS = 300L
         private const val SAMPLE_RATE_F = 16000f
-        private val WINDOW_SAMPLES = AudioConstants.WINDOW_SAMPLES
+
+        /**
+         * Active recognition language. Both models are bundled under assets/models/, so switching to
+         * Hindi is a one-line change to these two constants. Running both at once is deliberately not
+         * done — it halved accuracy by letting the wrong-language model win.
+         */
+        private const val ACTIVE_LANG = "en"
+        private const val ACTIVE_MODEL = "models/vosk-model-en-in"
     }
 }

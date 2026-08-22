@@ -57,21 +57,41 @@ object WebRtcIntelligenceCoordinator {
             launch {
                 CallManager.state.collect { callState ->
                     val scores = callState.scores
-                    _state.value = _state.value.copy(
-                        cloneScore = scores.smoothedSynthetic,
-                        identityMatch = when {
-                            scores.smoothedSimilarity == null -> null
-                            scores.smoothedSimilarity >= 0.75f -> true
-                            else -> false
-                        },
-                        vcdVerdict = when {
-                            scores.smoothedSynthetic == null -> "Analyzing voice…"
-                            scores.smoothedSynthetic >= 0.7f -> "⚠ Cloned voice detected"
-                            scores.smoothedSynthetic >= 0.4f -> "Possibly synthetic"
-                            else -> "Voice appears genuine"
-                        },
-                        vcdWindowsScored = scores.measuredWindows
-                    ).withFusedScore()
+                    // Clone/identity checks only mean something against a saved voiceprint. With no
+                    // voice enrolled for this call there is nothing to compare to, so we neither
+                    // score nor claim "cloned" or "same person" — the exact false verdict the user
+                    // was seeing. Scam-intent analysis (STT + Groq) continues regardless below.
+                    val voiceEnrolled = callState.contactId != null
+                    _state.value = if (!voiceEnrolled) {
+                        _state.value.copy(
+                            voiceCheckEnabled = false,
+                            cloneScore = null,
+                            identityMatch = null,
+                            vcdVerdict = "No saved voice — identity not checked",
+                            vcdWindowsScored = 0,
+                        ).withFusedScore()
+                    } else {
+                        val who = callState.contactName ?: "the saved voice"
+                        _state.value.copy(
+                            voiceCheckEnabled = true,
+                            cloneScore = scores.smoothedSynthetic,
+                            identityMatch = when {
+                                scores.smoothedSimilarity == null -> null
+                                scores.smoothedSimilarity >= 0.75f -> true
+                                else -> false
+                            },
+                            vcdVerdict = when {
+                                // Identity is the load-bearing signal: only claim a match/mismatch
+                                // once there is a similarity score, and lead with it.
+                                scores.smoothedSimilarity == null -> "Analyzing voice…"
+                                scores.smoothedSimilarity < 0.75f -> "⚠ Does not match $who"
+                                scores.smoothedSynthetic != null && scores.smoothedSynthetic >= 0.7f ->
+                                    "⚠ Cloned voice detected"
+                                else -> "Voice matches $who"
+                            },
+                            vcdWindowsScored = scores.measuredWindows,
+                        ).withFusedScore()
+                    }
                 }
             }
 
@@ -79,13 +99,23 @@ object WebRtcIntelligenceCoordinator {
             launch {
                 bridge.chunks.collect { chunk ->
                     val current = _state.value
-                    val newFull = (current.fullTranscript + " " + chunk.text).takeLast(2000)
-                    _state.value = current.copy(
-                        latestTranscriptChunk = chunk.text,
-                        fullTranscript = newFull.trim(),
-                        transcriptLanguage = chunk.languageCode,
-                        sttActive = true
-                    ).withFusedScore()
+                    // Only a *final* result is committed to the rolling transcript. Partials are a
+                    // growing prefix of the same words ("he", "hel", "hello"); appending each would
+                    // pile duplicates into the history, so a partial only updates the live line.
+                    _state.value = if (chunk.isFinal) {
+                        current.copy(
+                            latestTranscriptChunk = "",
+                            fullTranscript = "${current.fullTranscript} ${chunk.text}".trim().takeLast(2000),
+                            transcriptLanguage = chunk.languageCode,
+                            sttActive = true,
+                        ).withFusedScore()
+                    } else {
+                        current.copy(
+                            latestTranscriptChunk = chunk.text,
+                            transcriptLanguage = chunk.languageCode,
+                            sttActive = true,
+                        ).withFusedScore()
+                    }
                 }
             }
 

@@ -186,7 +186,16 @@ class CallSession(
         contactName = contact?.name
         baselineSynthetic = contact?.baselineSynthetic
         voiceprints = app.contacts.loadVoiceprints(contactId)
-        onState { it.copy(contactName = contactName, baselineSynthetic = baselineSynthetic) }
+        // A shared secret a clone cannot know — the most reliable check the app has, independent of
+        // the anti-spoofing model. Loaded here so the call screen can prompt the user to ask for it.
+        val challenge = app.contacts.loadChallenge(contactId)
+        onState {
+            it.copy(
+                contactName = contactName,
+                baselineSynthetic = baselineSynthetic,
+                challenge = challenge,
+            )
+        }
         return voiceprints.isNotEmpty()
     }
 

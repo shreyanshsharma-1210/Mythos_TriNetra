@@ -28,6 +28,11 @@
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
         android:minSdkVersion="34" />
+    <!-- Availability service: keeps the device reachable for calls in the background. Not a
+         microphone or media use, so it declares the special-use FGS type on Android 14+. -->
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
+        android:minSdkVersion="34" />
 
     <uses-feature
         android:name="android.hardware.microphone"
@@ -50,6 +55,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ui.screens.alert.EmergencyAlertActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.Trinetra" />
         
         <service
             android:name=".sensors.call.TrustMeshCallScreeningService"
@@ -124,6 +137,20 @@
             android:name=".vcd.service.VoipCallService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!--
+          AvailabilityService: keeps the signalling socket and mDNS advertisement alive so the
+          device stays reachable for calls while the app is backgrounded, the way a phone is always
+          reachable. specialUse rather than a media type because it holds no microphone.
+        -->
+        <service
+            android:name=".vcd.service.AvailabilityService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps this device reachable to receive incoming TRINETRA calls over the local network." />
+        </service>
 
     </application>
 

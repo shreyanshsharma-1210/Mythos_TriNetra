@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -35,6 +36,10 @@ import com.trustmesh.app.MainActivity
 import com.trustmesh.app.core.events.RiskLevel
 import com.trustmesh.app.core.identity.CallerIdentity
 import com.trustmesh.app.core.identity.IdentitySource
+import com.trustmesh.app.core.voicescan.VoiceScanController
+import com.trustmesh.app.core.voicescan.VoiceScanPhase
+import com.trustmesh.app.core.voicescan.VoiceScanState
+import com.trustmesh.app.core.voicescan.VoiceScanVerdict
 import com.trustmesh.app.interaction.InteractionManager
 
 enum class OverlayPresentationMode {
@@ -52,15 +57,12 @@ fun ProtectionOverlay(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident? = null,
     activeCallDurationSeconds: Long = 0,
+    scan: VoiceScanState = VoiceScanState(),
+    currentInteraction: com.trustmesh.app.interaction.Interaction? = null,
     onDismiss: () -> Unit
 ) {
     val identityName = callerIdentity?.displayName ?: "Unknown Caller"
     android.util.Log.d("TrustMeshIdentity", "overlayRecomposed=true identity=$identityName")
-    
-    val interactions by InteractionManager.interactions.collectAsState()
-    val currentInteraction = interactions.firstOrNull {
-        it.evidence.contains("Incoming call") || it.evidence.contains("Outgoing call") || it.appName == "Phone"
-    } ?: interactions.firstOrNull()
 
     var isMinimizedByUser by remember(fallbackNumber) { mutableStateOf(false) }
 
@@ -70,11 +72,19 @@ fun ProtectionOverlay(
         }
     }
 
+    // What the overlay actually renders against. A concluded voice-analysis run measured this
+    // call's audio directly, so it outranks the pipeline level for as long as it is in flight.
+    val effectiveRiskLevel = scan.effectiveRiskLevel(riskLevel)
+
     val context = LocalContext.current
-    LaunchedEffect(riskLevel) {
+    LaunchedEffect(effectiveRiskLevel) {
         if (state == CallOverlayState.ACTIVE || state == CallOverlayState.INCOMING) {
-            if (riskLevel == RiskLevel.CRITICAL || riskLevel == RiskLevel.HIGH) {
+            if (effectiveRiskLevel == RiskLevel.CRITICAL || effectiveRiskLevel == RiskLevel.HIGH) {
                 isMinimizedByUser = false
+                // A run of its own drives the ten-second alert buzz from VoiceScanController, which
+                // keeps buzzing whether or not this overlay is on screen. Firing a second pattern
+                // from here would cut that one short.
+                if (scan.active) return@LaunchedEffect
                 try {
                     val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
                     if (vibrator != null && vibrator.hasVibrator()) {
@@ -96,8 +106,6 @@ fun ProtectionOverlay(
         }
     }
 
-    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interactions)
-
     when (state) {
         CallOverlayState.INCOMING -> {
             if (isMinimizedByUser) {
@@ -109,15 +117,15 @@ fun ProtectionOverlay(
                     riskAssessment = riskAssessment,
                     activeIncident = activeIncident,
                     interaction = currentInteraction,
+                    scan = scan,
                     onDismiss = { isMinimizedByUser = true },
-                    onExpandRequested = { isMinimizedByUser = false },
-                    customVoice = customVoice
+                    onExpandRequested = { isMinimizedByUser = false }
                 )
             } else {
-                if (riskLevel == RiskLevel.CRITICAL) {
-                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                if (effectiveRiskLevel == RiskLevel.CRITICAL) {
+                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, scan, onDismiss = { isMinimizedByUser = true })
                 } else {
-                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, scan, onDismiss = { isMinimizedByUser = true })
                 }
             }
         }
@@ -131,15 +139,15 @@ fun ProtectionOverlay(
                     riskAssessment = riskAssessment,
                     activeIncident = activeIncident,
                     interaction = currentInteraction,
+                    scan = scan,
                     onDismiss = { isMinimizedByUser = true },
-                    onExpandRequested = { isMinimizedByUser = false },
-                    customVoice = customVoice
+                    onExpandRequested = { isMinimizedByUser = false }
                 )
             } else {
-                if (riskLevel == RiskLevel.CRITICAL) {
-                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
-                } else if (riskLevel == RiskLevel.HIGH) {
-                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                if (effectiveRiskLevel == RiskLevel.CRITICAL) {
+                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, scan, onDismiss = { isMinimizedByUser = true })
+                } else if (effectiveRiskLevel == RiskLevel.HIGH) {
+                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, scan, onDismiss = { isMinimizedByUser = true })
                 } else {
                     ActiveCallStatusBox(
                         callerIdentity = callerIdentity,
@@ -149,15 +157,15 @@ fun ProtectionOverlay(
                         riskAssessment = riskAssessment,
                         activeIncident = activeIncident,
                         interaction = currentInteraction,
+                        scan = scan,
                         onDismiss = { isMinimizedByUser = true },
-                        onExpandRequested = null,
-                        customVoice = customVoice
+                        onExpandRequested = null
                     )
                 }
             }
         }
         CallOverlayState.SUMMARY -> {
-            CallSummaryOverlay(currentInteraction, activeIncident, activeCallDurationSeconds, onDismiss)
+            CallSummaryOverlay(currentInteraction, activeIncident, activeCallDurationSeconds, scan, onDismiss)
         }
         CallOverlayState.HIDDEN -> {
             // Drawn nothing when hidden
@@ -165,88 +173,40 @@ fun ProtectionOverlay(
     }
 }
 
-private fun getCustomVoiceMatchInfo(
-    callerIdentity: CallerIdentity?,
-    fallbackName: String,
-    fallbackNumber: String,
-    interactions: List<com.trustmesh.app.interaction.Interaction>
-): Pair<String, String>? {
-    val number = (callerIdentity?.phoneNumber ?: fallbackNumber).trim()
-    val name = (callerIdentity?.displayName ?: fallbackName).trim()
+/** Palette shared by every risk surface in the overlay. */
+private val DangerRed = Color(0xFFDC2626)
+private val WarnAmber = Color(0xFFD97706)
+private val SafeGreen = Color(0xFF1B8A5A)
+private val Ink = Color(0xFF0F172A)
+private val Slate = Color(0xFF64748B)
+private val Cyan = Color(0xFF028090)
+private val Hairline = Color(0xFFE2E8F0)
 
-    var is6000 = number.contains("6000") || name.contains("6000") || fallbackNumber.contains("6000") || fallbackName.contains("6000")
-    var is7000 = number.contains("7000") || name.contains("7000") || fallbackNumber.contains("7000") || fallbackName.contains("7000")
-
-    val thresholdTime = System.currentTimeMillis() - 30_000
-    for (item in interactions) {
-        if (item.timestampMs >= thresholdTime || item.timestampMs == 0L) {
-            val blob = listOfNotNull(
-                item.title,
-                item.notificationTitle,
-                item.notificationText,
-                item.summary,
-                item.evidence?.joinToString(" "),
-                item.timeline?.joinToString(" ")
-            ).joinToString(" ")
-            if (blob.contains("6000")) {
-                is6000 = true
-            }
-            if (blob.contains("7000")) {
-                is7000 = true
-            }
-        }
-    }
-
-    return when {
-        is6000 -> {
-            val contactName = if (name.isNotBlank() && !name.contains("6000") && name != "Unknown Caller") " ($name)" else ""
-            Pair(
-                "Normal User Voice Matched",
-                "Voice matched: Real & genuine person$contactName is speaking."
-            )
-        }
-        is7000 -> {
-            Pair(
-                "⚠️ Likely Cloned Voice",
-                "Likely cloned voice or different person speaking based on voice fingerprint."
-            )
-        }
-        else -> null
-    }
+private fun riskColor(level: RiskLevel): Color = when (level) {
+    RiskLevel.CRITICAL, RiskLevel.HIGH -> DangerRed
+    RiskLevel.ELEVATED -> WarnAmber
+    RiskLevel.LOW -> SafeGreen
 }
 
-private fun getCustomVoiceMatchInfo(
-    callerIdentity: CallerIdentity?,
-    fallbackName: String,
-    fallbackNumber: String,
-    interaction: com.trustmesh.app.interaction.Interaction? = null
-): Pair<String, String>? {
-    return getCustomVoiceMatchInfo(
-        callerIdentity,
-        fallbackName,
-        fallbackNumber,
-        if (interaction != null) listOf(interaction) else emptyList()
-    )
-}
+/**
+ * The score the overlay shows.
+ *
+ * While a voice-analysis run is past its buffer, its own number is the answer — it is a direct
+ * measurement of this call, and showing the pipeline's number next to the run's verdict is how the
+ * overlay used to contradict itself.
+ */
+private fun displayScore(scan: VoiceScanState, riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?): Int =
+    if (scan.hasScore) scan.riskScore else riskAssessment?.score ?: 0
 
 @Composable
 fun RealtimeRiskGraph(
     currentScore: Int,
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     modifier: Modifier = Modifier,
-    interaction: com.trustmesh.app.interaction.Interaction? = null,
-    customVoice: Pair<String, String>? = null
+    scan: VoiceScanState = VoiceScanState()
 ) {
-    // 1. Exception handling for 6000 / 7000 OTP
-    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(null, "", "", interaction)
-    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
-    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
-
-    val targetScore = when {
-        isGenuine -> 5
-        isCloned -> 95
-        else -> currentScore
-    }.coerceIn(0, 100)
+    val liveTrend = scan.active && scan.trend.size >= 2
+    val targetScore = (if (scan.hasScore) scan.riskScore else currentScore).coerceIn(0, 100)
 
     val animatedScore by animateFloatAsState(
         targetValue = targetScore.toFloat(),
@@ -254,9 +214,11 @@ fun RealtimeRiskGraph(
         label = "RiskScoreAnim"
     )
 
-    // 2. Continuous real-time wave animation for premium oscilloscope effect
+    // Continuous wave animation for the idle oscilloscope look. A live run supplies real samples,
+    // so the synthetic wobble is only used when there is nothing measured to draw.
     var animationTime by remember { mutableStateOf(0f) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(liveTrend) {
+        if (liveTrend) return@LaunchedEffect
         val startTime = System.currentTimeMillis()
         while (true) {
             animationTime = (System.currentTimeMillis() - startTime) / 1000f
@@ -264,21 +226,23 @@ fun RealtimeRiskGraph(
         }
     }
 
-    val basePoints = remember(targetScore, riskAssessment, animationTime) {
+    val basePoints: List<Float> = if (liveTrend) {
+        scan.trend.map { it.toFloat() }
+    } else remember(targetScore, riskAssessment, animationTime) {
         val score = targetScore.toFloat()
-        
+
         // Multi-frequency organic sine wave oscillation
         val baseOsc = (Math.sin(animationTime.toDouble() * 2.5) * 3.5 + Math.cos(animationTime.toDouble() * 4.2) * 1.8).toFloat()
 
-        val l1Score = (if (isGenuine) 5f else 15f + baseOsc * 0.4f).coerceIn(0f, 100f)
-        val l2Score = (if (isGenuine) 5f else if (riskAssessment?.factors?.any { it.description.contains("Unknown", ignoreCase = true) || it.description.contains("Contact", ignoreCase = true) } == true) 35f else 15f) + baseOsc * 0.8f
-        val l3Score = (if (isGenuine) 5f else if (riskAssessment?.factors?.any { it.description.contains("Voice", ignoreCase = true) || it.description.contains("Fingerprint", ignoreCase = true) } == true) 55f else (l2Score + 10f)) + baseOsc * 1.1f
-        val l4Score = (if (isGenuine) 5f else if (riskAssessment?.factors?.any { it.description.contains("Groq", ignoreCase = true) || it.description.contains("Semantic", ignoreCase = true) } == true) 75f else (l3Score + 10f)) + baseOsc * 0.9f
-        val l5Score = (if (isGenuine) 5f else if (riskAssessment?.attackContext != null) 85f else l4Score) + baseOsc * 1.3f
+        val l1Score = (15f + baseOsc * 0.4f).coerceIn(0f, 100f)
+        val l2Score = (if (riskAssessment?.factors?.any { it.description.contains("Unknown", ignoreCase = true) || it.description.contains("Contact", ignoreCase = true) } == true) 35f else 15f) + baseOsc * 0.8f
+        val l3Score = (if (riskAssessment?.factors?.any { it.description.contains("Voice", ignoreCase = true) || it.description.contains("Fingerprint", ignoreCase = true) } == true) 55f else (l2Score + 10f)) + baseOsc * 1.1f
+        val l4Score = (if (riskAssessment?.factors?.any { it.description.contains("Groq", ignoreCase = true) || it.description.contains("Semantic", ignoreCase = true) } == true) 75f else (l3Score + 10f)) + baseOsc * 0.9f
+        val l5Score = (if (riskAssessment?.attackContext != null) 85f else l4Score) + baseOsc * 1.3f
         val l6Score = score + baseOsc * 1.5f
 
         listOf(
-            (if (isGenuine) 5f else 10f + baseOsc * 0.2f).coerceIn(0f, 100f),
+            (10f + baseOsc * 0.2f).coerceIn(0f, 100f),
             l1Score.coerceIn(0f, 100f),
             l2Score.coerceIn(0f, 100f),
             l3Score.coerceIn(0f, 100f),
@@ -288,19 +252,33 @@ fun RealtimeRiskGraph(
         )
     }
 
+    // A live run moves inside a narrow band — a fixed 0–100 axis would flatten a 52→63 climb into a
+    // straight line. The axis is padded around the observed range instead, and the labels below say
+    // what the axis actually spans so the shape cannot be mistaken for a bigger swing than it is.
+    val yMin: Float
+    val yMax: Float
+    if (liveTrend) {
+        val lo = (basePoints.min() - 6f).coerceAtLeast(0f)
+        val hi = (basePoints.max() + 6f).coerceAtMost(100f)
+        yMin = lo
+        yMax = if (hi - lo < 12f) (lo + 12f).coerceAtMost(100f) else hi
+    } else {
+        yMin = 0f
+        yMax = 100f
+    }
+    val span = (yMax - yMin).coerceAtLeast(1f)
+
     val lineColor = when {
-        isGenuine -> Color(0xFF1B8A5A) // Force green
-        isCloned -> Color(0xFFDC2626)  // Force red
-        animatedScore >= 70f -> Color(0xFFDC2626)
-        animatedScore >= 35f -> Color(0xFFD97706)
-        else -> Color(0xFF1B8A5A)
+        animatedScore >= 50f -> DangerRed
+        animatedScore >= 25f -> WarnAmber
+        else -> SafeGreen
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(Color(0xFFFAF8F5), RoundedCornerShape(16.dp))
-            .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), RoundedCornerShape(16.dp))
+            .border(BorderStroke(1.dp, Hairline), RoundedCornerShape(16.dp))
             .padding(12.dp)
     ) {
         Row(
@@ -310,14 +288,19 @@ fun RealtimeRiskGraph(
         ) {
             Column {
                 Text(
-                    text = "LIVE MULTI-LAYER RISK",
-                    color = Color(0xFF0F172A),
+                    text = if (liveTrend) "LIVE VOICE-ANALYSIS TREND" else "LIVE MULTI-LAYER RISK",
+                    color = Ink,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "● ANALYZING CALL IN REAL TIME",
-                    color = Color(0xFF028090),
+                    text = when {
+                        scan.phase == VoiceScanPhase.BUFFERING -> "● BUFFERING AUDIO — ${scan.secondsRemaining}s"
+                        scan.verdict == VoiceScanVerdict.SYNTHETIC -> "● SYNTHESIS MARKERS SCORING"
+                        scan.verdict == VoiceScanVerdict.GENUINE -> "● VOICE VERIFIED — MONITORING"
+                        else -> "● ANALYZING CALL IN REAL TIME"
+                    },
+                    color = Cyan,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -341,15 +324,16 @@ fun RealtimeRiskGraph(
             val height = size.height
             val points = basePoints
 
-            if (points.isEmpty()) return@Canvas
+            if (points.size < 2) return@Canvas
+
+            fun yFor(value: Float) = height - ((value - yMin) / span * height)
 
             // Draw thin grid lines
-            val gridColor = Color(0xFFE2E8F0)
             val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
             for (pct in listOf(0.25f, 0.50f, 0.75f)) {
                 val y = height * (1f - pct)
                 drawLine(
-                    color = gridColor,
+                    color = Hairline,
                     start = Offset(0f, y),
                     end = Offset(width, y),
                     pathEffect = dashEffect,
@@ -361,16 +345,16 @@ fun RealtimeRiskGraph(
             val path = Path()
             val fillPath = Path()
 
-            val startY = height - (points[0] / 100f * height)
+            val startY = yFor(points[0])
             path.moveTo(0f, startY)
             fillPath.moveTo(0f, height)
             fillPath.lineTo(0f, startY)
 
             for (i in 1 until points.size) {
                 val x1 = (i - 1) * stepX
-                val y1 = height - (points[i - 1] / 100f * height)
+                val y1 = yFor(points[i - 1])
                 val x2 = i * stepX
-                val y2 = height - (points[i] / 100f * height)
+                val y2 = yFor(points[i])
 
                 val controlX1 = x1 + (x2 - x1) / 2f
                 val controlY1 = y1
@@ -400,9 +384,13 @@ fun RealtimeRiskGraph(
                 style = Stroke(width = 2.5.dp.toPx())
             )
 
+            // A dense live trend gets a marker on the leading sample only; dotting every point
+            // turns the line into noise once there are two dozen of them.
+            val markEvery = if (points.size > 10) points.size - 1 else 0
             for (i in points.indices) {
+                if (markEvery != 0 && i != markEvery) continue
                 val px = i * stepX
-                val py = height - (points[i] / 100f * height)
+                val py = yFor(points[i])
                 val isCurrent = (i == points.size - 1)
 
                 drawCircle(
@@ -433,17 +421,192 @@ fun RealtimeRiskGraph(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            val layers = listOf("L1 Sig", "L2 Id", "L3 Voice", "L4 Groq", "L5 Ctx", "L6 Fuse")
-            layers.forEachIndexed { idx, label ->
-                val isActive = idx <= (basePoints.size - 2)
+            if (liveTrend) {
+                val observedLow = basePoints.min().toInt()
+                val observedHigh = basePoints.max().toInt()
                 Text(
-                    text = label,
+                    text = "axis ${yMin.toInt()}–${yMax.toInt()}%",
                     fontSize = 8.sp,
-                    color = if (isActive) Color(0xFF0F172A) else Color(0xFF94A3B8),
-                    fontWeight = if (idx == layers.lastIndex) FontWeight.Bold else FontWeight.Normal
+                    color = Slate
+                )
+                Text(
+                    text = "observed $observedLow–$observedHigh%",
+                    fontSize = 8.sp,
+                    color = Ink,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "now ${basePoints.last().toInt()}%",
+                    fontSize = 8.sp,
+                    color = lineColor,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                val layers = listOf("L1 Sig", "L2 Id", "L3 Voice", "L4 Groq", "L5 Ctx", "L6 Fuse")
+                layers.forEachIndexed { idx, label ->
+                    Text(
+                        text = label,
+                        fontSize = 8.sp,
+                        color = Ink,
+                        fontWeight = if (idx == layers.lastIndex) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The voice-analysis panel: what was measured, what the rule is, and what it concluded.
+ *
+ * The markers are listed individually rather than rolled into the headline percentage on purpose.
+ * A user cannot act on "52% cloned" — they can act on "no breath between phrases, but the
+ * fingerprint is inconclusive", and they can tell when the app is overreaching.
+ */
+@Composable
+private fun VoiceAnalysisPanel(scan: VoiceScanState) {
+    if (!scan.active) return
+
+    val buffering = scan.phase == VoiceScanPhase.BUFFERING
+    val accent = when (scan.verdict) {
+        null -> Cyan
+        VoiceScanVerdict.GENUINE -> if (scan.riskScore >= 50) DangerRed else SafeGreen
+        VoiceScanVerdict.SYNTHETIC -> DangerRed
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFAF8F5), RoundedCornerShape(14.dp))
+            .border(BorderStroke(1.dp, accent.copy(alpha = 0.45f)), RoundedCornerShape(14.dp))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "🎙 VOICE AUTHENTICITY ANALYSIS",
+                color = accent,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
+            if (scan.hasScore) {
+                Text(
+                    text = "${scan.cloneConfidence}%",
+                    color = accent,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = scan.headline,
+            color = Ink,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        if (scan.hasScore) {
+            Text(
+                text = "Confidence the voice is AI-cloned",
+                color = Slate,
+                fontSize = 10.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = scan.summary,
+            color = Ink,
+            fontSize = 11.sp,
+            lineHeight = 15.sp
+        )
+
+        if (buffering) {
+            Spacer(modifier = Modifier.height(8.dp))
+            val progress = (scan.bufferSeconds - scan.secondsRemaining)
+                .toFloat() / scan.bufferSeconds.coerceAtLeast(1)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Hairline)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Cyan)
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${scan.secondsRemaining}s of buffer remaining",
+                color = Slate,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        if (scan.markers.isEmpty()) return@Column
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = "WHAT IT TAKES TO CALL A VOICE SYNTHETIC — ${scan.flaggedMarkers} OF ${scan.markers.size} MARKERS FAILED",
+            color = Slate,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+
+        scan.markers.forEach { marker ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = if (marker.flagged) "✗" else "✓",
+                    color = if (marker.flagged) DangerRed else SafeGreen,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.width(14.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = marker.label,
+                        color = Ink,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = marker.reading,
+                        color = Slate,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = scan.decisionRule,
+            color = Slate,
+            fontSize = 10.sp,
+            lineHeight = 14.sp
+        )
     }
 }
 
@@ -457,34 +620,25 @@ fun PremiumNotificationOverlayCard(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit,
-    onCollapse: (() -> Unit)? = null,
-    customVoice: Pair<String, String>? = null
+    onCollapse: (() -> Unit)? = null
 ) {
-    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
-    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
-    
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
+    val effectiveRiskLevel = scan.effectiveRiskLevel(riskLevel)
+    val themeColor = riskColor(effectiveRiskLevel)
+    val score = displayScore(scan, riskAssessment)
 
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFDC2626) // Red
-        RiskLevel.HIGH -> Color(0xFFDC2626) // Red
-        RiskLevel.ELEVATED -> Color(0xFFD97706) // Amber/Yellow
-        RiskLevel.LOW -> Color(0xFF1B8A5A) // Green
+    // A live voice verdict is what this card is about, so it speaks first and alone. Falling back
+    // to the pipeline's wording underneath it produced a card that warned about a cloned voice in
+    // one paragraph and an OTP scam in the next.
+    val explanation = if (scan.hasScore) {
+        scan.summary
+    } else {
+        activeIncident?.explanation
+            ?: riskAssessment?.attackContext?.explanation
+            ?: riskAssessment?.explanation
+            ?: "Analyzing live conversation metrics..."
     }
-
-    val score = when {
-        isGenuine -> 5
-        isCloned -> 95
-        else -> riskAssessment?.score ?: 0
-    }
-
-    val explanation = finalCustomVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Analyzing live conversation metrics...")
 
     Column(
         modifier = Modifier
@@ -553,7 +707,7 @@ fun PremiumNotificationOverlayCard(
         Spacer(modifier = Modifier.height(14.dp))
 
         // 2. Caller Info and Reputation Hero Section
-        val name = finalCustomVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { "Unknown Caller" })
+        val name = callerIdentity?.displayName ?: fallbackName.ifBlank { "Unknown Caller" }
         val num = callerIdentity?.phoneNumber ?: fallbackNumber
 
         Row(
@@ -587,7 +741,7 @@ fun PremiumNotificationOverlayCard(
                     fontSize = 15.sp,
                     maxLines = 1
                 )
-                if (num.isNotBlank() && finalCustomVoice == null) {
+                if (num.isNotBlank()) {
                     Text(
                         text = num,
                         color = Color(0xFF64748B),
@@ -622,7 +776,13 @@ fun PremiumNotificationOverlayCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 3. Explanation text
+        // 3. Voice authenticity analysis — the headline finding when a run is in flight
+        if (scan.active) {
+            VoiceAnalysisPanel(scan)
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        // 4. Explanation text
         Text(
             text = explanation,
             color = Color(0xFF0F172A),
@@ -631,7 +791,10 @@ fun PremiumNotificationOverlayCard(
         )
 
         // 4. AI Insight Section (Groq Response)
-        val groqResp = interaction?.groqResponse
+        // Suppressed while a voice reading stands: the semantic layer scores the *words*, and its
+        // category (OTP theft, parcel scam…) reads as the headline finding when the headline
+        // finding is the voice itself.
+        val groqResp = interaction?.groqResponse.takeIf { !scan.hasScore }
         if (groqResp != null) {
             Spacer(modifier = Modifier.height(10.dp))
             Column(
@@ -673,8 +836,7 @@ fun PremiumNotificationOverlayCard(
         RealtimeRiskGraph(
             currentScore = score,
             riskAssessment = riskAssessment,
-            interaction = interaction,
-            customVoice = finalCustomVoice
+            scan = scan
         )
 
         // 6. Evidence & Recommended Actions List
@@ -784,28 +946,14 @@ fun ActiveCallStatusBox(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit,
-    onExpandRequested: (() -> Unit)? = null,
-    customVoice: Pair<String, String>? = null
+    onExpandRequested: (() -> Unit)? = null
 ) {
     var isExpanded by remember(onExpandRequested) { mutableStateOf(onExpandRequested == null) }
 
-    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
-    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
-    
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
-
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFDC2626)
-        RiskLevel.HIGH -> Color(0xFFDC2626)
-        RiskLevel.ELEVATED -> Color(0xFFD97706)
-        RiskLevel.LOW -> Color(0xFF1B8A5A)
-    }
+    val effectiveRiskLevel = scan.effectiveRiskLevel(riskLevel)
+    val themeColor = riskColor(effectiveRiskLevel)
 
     Box(
         modifier = Modifier
@@ -842,7 +990,11 @@ fun ActiveCallStatusBox(
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
-                    val identifier = finalCustomVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { callerIdentity?.phoneNumber ?: fallbackNumber })
+                    val identifier = if (scan.hasScore) {
+                        scan.headline
+                    } else {
+                        callerIdentity?.displayName ?: fallbackName.ifBlank { callerIdentity?.phoneNumber ?: fallbackNumber }
+                    }
                     if (identifier.isNotBlank()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -855,7 +1007,15 @@ fun ActiveCallStatusBox(
                 }
             }
         } else {
-            Box(modifier = Modifier.width(300.dp)) {
+            // The analysis panel makes this card tall enough to run off a short screen, and the
+            // overlay window is WRAP_CONTENT — without a bound and a scroll the decision rule at
+            // the bottom would be unreachable.
+            Box(
+                modifier = Modifier
+                    .width(300.dp)
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 PremiumNotificationOverlayCard(
                     callerIdentity = callerIdentity,
                     callerReputation = null,
@@ -865,6 +1025,7 @@ fun ActiveCallStatusBox(
                     riskAssessment = riskAssessment,
                     activeIncident = activeIncident,
                     interaction = interaction,
+                    scan = scan,
                     onDismiss = onDismiss,
                     onCollapse = {
                         if (onExpandRequested != null) {
@@ -872,8 +1033,7 @@ fun ActiveCallStatusBox(
                         } else {
                             isExpanded = false
                         }
-                    },
-                    customVoice = finalCustomVoice
+                    }
                 )
             }
         }
@@ -885,6 +1045,7 @@ fun CallSummaryOverlay(
     interaction: com.trustmesh.app.interaction.Interaction?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     activeCallDurationSeconds: Long,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -941,8 +1102,8 @@ fun CallSummaryOverlay(
             Text(durationText, color = Color(0xFF0F172A), fontSize = 13.sp)
             Spacer(modifier = Modifier.height(10.dp))
 
-            val riskLevel = interaction?.riskLevel ?: RiskLevel.LOW
-            val score = interaction?.riskAssessment?.score ?: 0
+            val riskLevel = scan.effectiveRiskLevel(interaction?.riskLevel ?: RiskLevel.LOW)
+            val score = displayScore(scan, interaction?.riskAssessment)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -951,11 +1112,7 @@ fun CallSummaryOverlay(
                     Text("Risk Level:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Text(
                         text = riskLevel.displayName,
-                        color = when (riskLevel) {
-                            RiskLevel.CRITICAL, RiskLevel.HIGH -> Color(0xFFDC2626)
-                            RiskLevel.ELEVATED -> Color(0xFFD97706)
-                            RiskLevel.LOW -> Color(0xFF1B8A5A)
-                        },
+                        color = riskColor(riskLevel),
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -969,9 +1126,15 @@ fun CallSummaryOverlay(
 
             RealtimeRiskGraph(
                 currentScore = score,
-                riskAssessment = interaction?.riskAssessment
+                riskAssessment = interaction?.riskAssessment,
+                scan = scan
             )
             Spacer(modifier = Modifier.height(10.dp))
+
+            if (scan.hasScore) {
+                VoiceAnalysisPanel(scan)
+                Spacer(modifier = Modifier.height(10.dp))
+            }
 
             val rep = interaction?.callerReputation
             if (rep != null && rep.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
@@ -1089,24 +1252,11 @@ fun CompactFloatingOverlay(
     riskLevel: RiskLevel,
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit
 ) {
-    val finalCustomVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, null)
-    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
-    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
-    
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
-
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFDC2626)
-        RiskLevel.HIGH -> Color(0xFFDC2626)
-        RiskLevel.ELEVATED -> Color(0xFFD97706)
-        RiskLevel.LOW -> Color(0xFF1B8A5A)
-    }
+    val effectiveRiskLevel = scan.effectiveRiskLevel(riskLevel)
+    val themeColor = riskColor(effectiveRiskLevel)
 
     Surface(
         modifier = Modifier.padding(16.dp),
@@ -1127,7 +1277,13 @@ fun CompactFloatingOverlay(
                     fontSize = 12.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                val title = finalCustomVoice?.first ?: (if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" })
+                val title = if (scan.hasScore) {
+                    scan.headline
+                } else if (callerIdentity?.isKnown == true) {
+                    callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" }
+                } else {
+                    fallbackName.ifBlank { "Unknown Caller" }
+                }
                 Text(title, color = Color(0xFF0F172A), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -1160,9 +1316,16 @@ fun FloatingRiskCard(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit
 ) {
-    Box(modifier = Modifier.width(320.dp).padding(8.dp)) {
+    Box(
+        modifier = Modifier
+            .width(320.dp)
+            .padding(8.dp)
+            .heightIn(max = 600.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
         PremiumNotificationOverlayCard(
             callerIdentity = callerIdentity,
             callerReputation = callerReputation,
@@ -1172,9 +1335,9 @@ fun FloatingRiskCard(
             riskAssessment = riskAssessment,
             activeIncident = activeIncident,
             interaction = interaction,
+            scan = scan,
             onDismiss = onDismiss,
-            onCollapse = null,
-            customVoice = null
+            onCollapse = null
         )
     }
 }
@@ -1189,24 +1352,10 @@ fun BottomRiskSheet(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit
 ) {
-    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = customVoice?.first == "Normal User Voice Matched"
-    val isCloned = customVoice?.first == "⚠️ Likely Cloned Voice"
-
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
-
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFDC2626)
-        RiskLevel.HIGH -> Color(0xFFDC2626)
-        RiskLevel.ELEVATED -> Color(0xFFD97706)
-        RiskLevel.LOW -> Color(0xFF1B8A5A)
-    }
+    val themeColor = riskColor(scan.effectiveRiskLevel(riskLevel))
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1229,9 +1378,9 @@ fun BottomRiskSheet(
                 riskAssessment = riskAssessment,
                 activeIncident = activeIncident,
                 interaction = interaction,
+                scan = scan,
                 onDismiss = onDismiss,
-                onCollapse = null,
-                customVoice = customVoice
+                onCollapse = null
             )
         }
     }
@@ -1247,6 +1396,7 @@ fun FullScreenSecurityOverlay(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
+    scan: VoiceScanState = VoiceScanState(),
     onDismiss: () -> Unit
 ) {
     Box(
@@ -1256,7 +1406,12 @@ fun FullScreenSecurityOverlay(
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        Box(modifier = Modifier.width(340.dp)) {
+        Box(
+            modifier = Modifier
+                .width(340.dp)
+                .heightIn(max = 620.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             PremiumNotificationOverlayCard(
                 callerIdentity = callerIdentity,
                 callerReputation = callerReputation,
@@ -1266,9 +1421,9 @@ fun FullScreenSecurityOverlay(
                 riskAssessment = riskAssessment,
                 activeIncident = activeIncident,
                 interaction = interaction,
+                scan = scan,
                 onDismiss = onDismiss,
-                onCollapse = null,
-                customVoice = null
+                onCollapse = null
             )
         }
     }

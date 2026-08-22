@@ -99,10 +99,15 @@ object AttackContextEngine {
             }
         }
 
-        val hasIncomingCall = incomingCalls.isNotEmpty() || interaction.evidence.contains("Incoming call")
+        val hasActiveCall = incomingCalls.isNotEmpty() || 
+                            windowEvents.any { it.type == EventType.OUTGOING_CALL } || 
+                            interaction.evidence.contains("Incoming call") || 
+                            interaction.evidence.contains("Outgoing call") || 
+                            interaction.appName == "Phone" || 
+                            interaction.title.contains("call", ignoreCase = true)
         val isUnknownCaller = interaction.callerIdentity == null || interaction.callerIdentity?.isKnown != true
 
-        if (!hasIncomingCall || !isUnknownCaller) {
+        if (!hasActiveCall || !isUnknownCaller) {
             return null
         }
 

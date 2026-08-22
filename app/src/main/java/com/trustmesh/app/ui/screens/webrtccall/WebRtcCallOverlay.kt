@@ -116,9 +116,11 @@ fun WebRtcCallPill(
                 fontSize = 13.sp,
                 maxLines = 1
             )
-            val cloneText = state.cloneScore?.let {
-                "Clone: ${"%.0f".format(it * 100)}%"
-            } ?: "Checking voice…"
+            val cloneText = when {
+                !state.voiceCheckEnabled -> "Identity check off — no saved voice"
+                state.cloneScore != null -> "Clone: ${"%.0f".format(state.cloneScore * 100)}%"
+                else -> "Checking voice…"
+            }
             val sttText = state.latestTranscriptChunk.take(40).ifBlank { null }
             Text(
                 text = if (sttText != null) "\"$sttText…\"" else cloneText,
@@ -263,7 +265,14 @@ fun WebRtcCallOverlay(
             color = color
         ) {
             val clone = state.cloneScore
-            if (clone == null) {
+            if (!state.voiceCheckEnabled) {
+                Text(
+                    "No saved voice for this call, so identity and clone checks are off. " +
+                        "Enrol and select a contact to compare the caller against.",
+                    color = Slate,
+                    fontSize = 11.sp,
+                )
+            } else if (clone == null) {
                 Text("Listening… needs ~12 s of audio", color = Slate, fontSize = 11.sp)
             } else {
                 val pct = (clone * 100).toInt()

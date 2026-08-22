@@ -14,6 +14,7 @@ import com.trustmesh.app.core.identity.CompositeCallerIdentityResolver
 import com.trustmesh.app.core.identity.LocalContactIdentityResolver
 import com.trustmesh.app.core.identity.MockExternalCallerIdentityProvider
 import com.trustmesh.app.core.incident.SecurityIncidentManager
+import com.trustmesh.app.core.alert.FamilyAlertConfig
 import com.trustmesh.app.core.intelligence.risk.RiskEngine
 import com.trustmesh.app.core.intelligence.risk.RiskEngineConfig
 import com.trustmesh.app.data.local.TrustMeshDatabase
@@ -141,10 +142,19 @@ object InteractionManager {
                     var recentCalls: List<Interaction> = emptyList()
                     synchronized(lock) {
                         recentCalls = _interactions.value.filter { 
-                            it.evidence.contains("Incoming call") && (currentTime - it.timestampMs) <= windowMs 
+                            (it.evidence.contains("Incoming call") || 
+                             it.evidence.contains("Outgoing call") || 
+                             it.evidence.contains("Call in progress") ||
+                             it.appName == "Phone" || 
+                             it.title.contains("call", ignoreCase = true)) && 
+                            (currentTime - it.timestampMs) <= windowMs 
+                        }
+                        if (recentCalls.isEmpty() && _interactions.value.isNotEmpty()) {
+                            recentCalls = listOf(_interactions.value.first())
                         }
                     }
                     for (call in recentCalls) {
+                        com.trustmesh.app.core.intelligence.risk.RiskEngine.invalidateCache(call.id)
                         evaluateRisk(call.id)
                     }
                 }
@@ -333,7 +343,7 @@ object InteractionManager {
         }
     }
 
-    private fun evaluateRisk(interactionId: String) {
+    fun evaluateRisk(interactionId: String) {
         scope.launch {
             try {
                 var interaction: Interaction? = null
@@ -345,7 +355,10 @@ object InteractionManager {
                     }
                 }
 
-                if (interaction == null) return@launch
+                if (interaction == null) {
+                    Log.w(TAG, "evaluateRisk skipped — interaction $interactionId not found in state")
+                    return@launch
+                }
 
                 val recentEvents = try {
                     repository?.getRecentEvents(RiskEngineConfig.RELATED_EVENT_WINDOW_MS) ?: emptyList()
@@ -381,7 +394,26 @@ object InteractionManager {
                         Log.e(TAG, "Failed to persist risk-updated interaction", e)
                     }
                     SecurityIncidentManager.processInteraction(updated!!)
-                    Log.d(TAG, "Risk evaluated for $interactionId — level=${assessment.riskLevel}")
+                    Log.i(TAG, "Risk evaluated for $interactionId — score=${assessment.score} level=${assessment.riskLevel}")
+
+                    if (assessment.score > FamilyAlertConfig.HIGH_RISK_THRESHOLD) {
+                        Log.i(TAG, "[FAMILY ALERT TRIGGERED] Risk score ${assessment.score} > ${FamilyAlertConfig.HIGH_RISK_THRESHOLD} for $interactionId — launching FamilyAlertService")
+                        val finalUpdated = updated!!
+                        scope.launch {
+                            try {
+                                com.trustmesh.app.core.alert.FamilyAlertService.sendHighRiskAlert(
+                                    riskScore = assessment.score,
+                                    incidentType = finalUpdated.incidentType?.name,
+                                    callerName = finalUpdated.callerIdentity?.displayName ?: finalUpdated.title,
+                                    interactionId = finalUpdated.id
+                                )
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Family alert trigger error: ${e.message}", e)
+                            }
+                        }
+                    } else {
+                        Log.d(TAG, "[FAMILY ALERT SKIPPED] Risk score ${assessment.score} <= ${FamilyAlertConfig.HIGH_RISK_THRESHOLD} for $interactionId")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "evaluateRisk failed for $interactionId", e)

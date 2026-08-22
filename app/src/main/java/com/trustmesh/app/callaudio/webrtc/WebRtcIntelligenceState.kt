@@ -25,6 +25,12 @@ data class WebRtcIntelligenceState(
     val remoteName: String = "",
     val callConnectedAtMs: Long = 0L,
     // ── VCD clone scoring ──────────────────────────────────────────────────
+    /**
+     * True only when a voice has been enrolled and selected for this call. The clone and identity
+     * checks are meaningless without a saved voiceprint to compare against, so when this is false
+     * the UI must not claim "cloned" or "same person" — there is nothing to be the same as.
+     */
+    val voiceCheckEnabled: Boolean = false,
     val cloneScore: Float? = null,          // 0 = genuine, 1 = synthetic
     val identityMatch: Boolean? = null,
     val vcdVerdict: String = "Analyzing voice…",
@@ -48,7 +54,9 @@ data class WebRtcIntelligenceState(
 ) {
     /** Weighted fuse: VCD 40% + Groq 60%. VCD is precise but needs ~12 s; Groq fires faster. */
     fun withFusedScore(): WebRtcIntelligenceState {
-        val vcdContrib = (cloneScore ?: 0f) * 100f * 0.4f
+        // No enrolled voice → the clone score is not trustworthy evidence and must not push the
+        // risk meter. Scam-intent (Groq) still drives it on its own.
+        val vcdContrib = if (voiceCheckEnabled) (cloneScore ?: 0f) * 100f * 0.4f else 0f
         val groqContrib = (groqResult?.riskScore ?: 0) * 0.6f
         val fused = (vcdContrib + groqContrib).toInt().coerceIn(0, 100)
         val level = when {

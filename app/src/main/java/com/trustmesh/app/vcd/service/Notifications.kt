@@ -22,6 +22,9 @@ object Notifications {
     const val CHANNEL_INCOMING = "vcd_incoming"
     const val NOTIFICATION_ID_INCOMING = 4203
 
+    const val CHANNEL_AVAILABLE = "vcd_available"
+    const val NOTIFICATION_ID_AVAILABLE = 4204
+
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
@@ -64,6 +67,46 @@ object Notifications {
                 setShowBadge(true)
             }
         )
+
+        // MIN keeps the "reachable" reminder present but out of the way — it lives in the shade,
+        // not as a banner. It is the notification that keeps the availability foreground service
+        // alive so the device can be rung with the app in the background, like a real phone.
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_AVAILABLE,
+                "Reachable for calls",
+                NotificationManager.IMPORTANCE_MIN,
+            ).apply {
+                description = "Shown while this device can receive TRINETRA calls."
+                setShowBadge(false)
+            }
+        )
+    }
+
+    /**
+     * The persistent "you can be called" notification. Backs a foreground service so listening for
+     * calls and advertising over mDNS survive the app being backgrounded or memory-trimmed —
+     * without it, availability dies the moment Android reclaims the process.
+     */
+    fun availabilityNotification(context: Context): Notification {
+        val open = PendingIntent.getActivity(
+            context,
+            7,
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(context, CHANNEL_AVAILABLE)
+            .setSmallIcon(R.drawable.ic_stat_mic)
+            .setContentTitle("TRINETRA is reachable")
+            .setContentText("This device can receive secure calls.")
+            .setContentIntent(open)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
     }
 
     /**

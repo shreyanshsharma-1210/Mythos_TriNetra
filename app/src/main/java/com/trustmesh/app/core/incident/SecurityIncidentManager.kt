@@ -60,11 +60,27 @@ object SecurityIncidentManager {
                 } else {
                     val updated = SecurityIncidentEngine.updateIncident(existingIncident, interaction)
                     dao?.updateIncident(updated.toEntity())
+                    if (updated.riskScore > com.trustmesh.app.core.alert.FamilyAlertConfig.HIGH_RISK_THRESHOLD) {
+                        com.trustmesh.app.core.alert.FamilyAlertService.sendHighRiskAlert(
+                            riskScore = updated.riskScore,
+                            incidentType = updated.incidentType.name,
+                            callerName = updated.callerIdentity?.displayName ?: updated.callerIdentity?.phoneNumber,
+                            interactionId = updated.relatedInteractionIds.firstOrNull() ?: updated.incidentId
+                        )
+                    }
                 }
             } else {
                 val newIncident = SecurityIncidentEngine.createIncident(interaction)
                 if (newIncident != null) {
                     dao?.insertIncident(newIncident.toEntity())
+                    if (newIncident.riskScore > com.trustmesh.app.core.alert.FamilyAlertConfig.HIGH_RISK_THRESHOLD) {
+                        com.trustmesh.app.core.alert.FamilyAlertService.sendHighRiskAlert(
+                            riskScore = newIncident.riskScore,
+                            incidentType = newIncident.incidentType.name,
+                            callerName = newIncident.callerIdentity?.displayName ?: newIncident.callerIdentity?.phoneNumber,
+                            interactionId = newIncident.relatedInteractionIds.firstOrNull() ?: newIncident.incidentId
+                        )
+                    }
                 }
             }
         }

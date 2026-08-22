@@ -133,6 +133,13 @@ class TrustMeshCallScreeningService : CallScreeningService() {
 
                             val riskAssessment = RiskEngine.evaluate(tempInteraction, recentEvents)
                             Log.d(TAG, "Risk assessed — level=${riskAssessment.riskLevel} score=${riskAssessment.score}")
+                            if (riskAssessment.score > com.trustmesh.app.core.alert.FamilyAlertConfig.HIGH_RISK_THRESHOLD) {
+                                com.trustmesh.app.core.alert.FamilyAlertService.sendHighRiskAlert(
+                                    riskScore = riskAssessment.score,
+                                    callerName = phoneNumber,
+                                    interactionId = interactionId
+                                )
+                            }
 
                             val activeIncident = SecurityIncidentManager.activeIncident.value
                             if (activeIncident != null) {
