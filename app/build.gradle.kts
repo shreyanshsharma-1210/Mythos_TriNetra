@@ -55,8 +55,8 @@ android {
         buildConfig = true
     }
     androidResources {
-        // Leaving the model graphs uncompressed avoids inflating ~8 MB on every cold start.
-        noCompress += listOf("onnx")
+        // Leaving the model graphs uncompressed avoids inflating on every cold start.
+        noCompress += listOf("onnx", "dat", "res")
     }
     packaging {
         resources {
@@ -95,6 +95,8 @@ dependencies {
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     // Stream WebRTC: exposes AudioTrack.addSink() needed to tap remote PCM
     implementation("io.getstream:stream-webrtc-android:1.3.10")
+    // Vosk: on-device STT — accepts raw PCM, Hindi + English, fully offline
+    implementation("com.alphacephei:vosk-android:0.3.47")
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

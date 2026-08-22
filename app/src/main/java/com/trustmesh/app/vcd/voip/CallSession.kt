@@ -47,6 +47,7 @@ class CallSession(
 
     private val engine = WebRtcEngine(app)
     private val adapter = RemoteAudioAdapter()
+    val remoteAudioAdapter: RemoteAudioAdapter get() = adapter
     private val signaling = SignalingClient(scope)
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -91,8 +92,15 @@ class CallSession(
 
         wireSignaling()
         scope.launch {
-            loadContact(contactId) ?: return@launch
-            if (!signaling.connect(peer.address)) return@launch
+            if (!loadContact(contactId)) {
+                fail("The stored voiceprint for ${contactName ?: "that contact"} could not be loaded.")
+                return@launch
+            }
+            if (!signaling.connect(peer.address)) {
+                fail("Could not reach ${peer.name} (${peer.address}). Check that both devices are on the same Wi-Fi network.")
+                return@launch
+            }
+            Log.i(TAG, "connected — sending invite as '$localName' to ${peer.name}")
             signaling.send("invite") { put("name", localName) }
             setStage(CallStage.RINGING_OUT)
             onState { it.copy(stage = CallStage.RINGING_OUT) }
@@ -113,23 +121,33 @@ class CallSession(
         adapter.markCallStarted(System.currentTimeMillis())
         remoteHost = socket.inetAddress?.hostAddress
         wireSignaling()
-        signaling.adopt(socket)
-    }
-
-    private fun onInvite(callerName: String) {
-        if (stage != CallStage.IDLE) return
         setStage(CallStage.INCOMING)
         onState {
             CallState(
                 stage = CallStage.INCOMING,
                 role = CallRole.CALLEE,
-                remoteName = callerName,
+                remoteName = "Incoming call…",
                 remoteAddress = remoteHost,
                 startedAtMs = System.currentTimeMillis(),
                 contactId = contactId,
             )
         }
+        signaling.adopt(socket)
+    }
+
+    private fun onInvite(callerName: String) {
+        Log.i(TAG, "onInvite from '$callerName' (stage=$stage) — ringing")
+        if (stage != CallStage.INCOMING && stage != CallStage.IDLE) return
+        onState {
+            it.copy(
+                stage = CallStage.INCOMING,
+                role = CallRole.CALLEE,
+                remoteName = callerName,
+                remoteAddress = remoteHost,
+            )
+        }
         scope.launch {
+            // Voiceprints missing only disables identity checking — the user can still answer.
             loadContact(contactId)
             observeDiagnostics()
         }
@@ -138,6 +156,7 @@ class CallSession(
     }
 
     fun answer() {
+        Log.i(TAG, "answer() called (stage=$stage)")
         if (stage != CallStage.INCOMING) return
         cancelRingTimeout()
         signaling.send("accept") { put("name", localName) }
@@ -150,25 +169,25 @@ class CallSession(
     fun decline() {
         if (stage != CallStage.INCOMING) return
         cancelRingTimeout()
-        signaling.send("decline") {}
+        signaling.sendAndClose("decline") {}
         endWith(CallEnding.DECLINED, "Call declined")
     }
 
     // ---------------------------------------------------------------- shared
 
-    /** Returns null and fails the call when a requested voiceprint cannot be loaded. */
-    private suspend fun loadContact(contactId: Long?): Unit? {
-        if (contactId == null) return Unit
+    /**
+     * Loads contact data and voiceprints for [contactId]. Returns true if voiceprints were
+     * loaded, false if the contact has no usable voiceprints. Callers decide whether a missing
+     * voiceprint should fail the call (outgoing) or merely skip identity checking (incoming).
+     */
+    private suspend fun loadContact(contactId: Long?): Boolean {
+        if (contactId == null) return true
         val contact = app.contacts.get(contactId)
         contactName = contact?.name
         baselineSynthetic = contact?.baselineSynthetic
         voiceprints = app.contacts.loadVoiceprints(contactId)
         onState { it.copy(contactName = contactName, baselineSynthetic = baselineSynthetic) }
-        if (voiceprints.isEmpty()) {
-            fail("The stored voiceprint for ${contactName ?: "that contact"} could not be loaded.")
-            return null
-        }
-        return Unit
+        return voiceprints.isNotEmpty()
     }
 
     private fun startEngine(): Boolean {
@@ -187,8 +206,9 @@ class CallSession(
                 when (stage) {
                     CallStage.CONNECTED -> endWith(CallEnding.HUNG_UP, null)
                     CallStage.INCOMING -> endWith(CallEnding.MISSED, null)
+                    CallStage.RINGING_OUT, CallStage.CONNECTING -> endWith(CallEnding.UNANSWERED, null)
                     CallStage.IDLE, CallStage.ENDED, CallStage.FAILED -> Unit
-                    else -> fail(reason ?: "The call ended before it connected.")
+                    else -> endWith(CallEnding.UNANSWERED, null)
                 }
             }
         }
@@ -196,10 +216,14 @@ class CallSession(
     }
 
     private fun handleSignal(message: SignalingClient.Message) {
+        Log.i(TAG, "signal received: '${message.type}' (role=$role, stage=$stage)")
         when (message.type) {
             // Callee side: somebody is calling. Nothing has opened the microphone yet.
             "invite" -> {
-                if (role != CallRole.CALLEE) return
+                if (role != CallRole.CALLEE) {
+                    Log.w(TAG, "ignoring invite: not callee (role=$role)")
+                    return
+                }
                 onInvite(message.payload.optString("name").ifBlank { "Unknown caller" })
             }
 
@@ -436,6 +460,10 @@ class CallSession(
     /** User-initiated hang-up. */
     fun hangUp() {
         if (closed) return
+        Log.i(TAG, "hangUp() called (stage=$stage)")
+        // Async send: sending on the caller's thread throws NetworkOnMainThreadException when
+        // hangUp is invoked from the service's main thread. The peer's socket-close detection is
+        // the backstop if this best-effort "bye" does not flush before the socket is torn down.
         signaling.send("bye") {}
         endWith(if (stage == CallStage.CONNECTED) CallEnding.HUNG_UP else CallEnding.UNANSWERED, null)
     }

@@ -9,6 +9,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import com.trustmesh.app.callaudio.webrtc.WebRtcIntelligenceCoordinator
 import com.trustmesh.app.vcd.voip.CallManager
 import com.trustmesh.app.vcd.voip.CallStage
 import kotlinx.coroutines.Job
@@ -72,10 +73,25 @@ class VoipCallService : LifecycleService() {
         watchJob = lifecycleScope.launch {
             CallManager.state.collect { state ->
                 if (!state.active) {
+                    WebRtcIntelligenceCoordinator.stop()
                     stopEverything()
                     return@collect
                 }
-                if (state.stage != lastStage) promote(state.stage, state.remoteName)
+                if (state.stage != lastStage) {
+                    promote(state.stage, state.remoteName)
+                    // Start the intelligence pipeline the moment audio is flowing
+                    if (state.stage == CallStage.CONNECTED) {
+                        val session = com.trustmesh.app.vcd.voip.CallManager.currentSession()
+                        val adapter = session?.remoteAudioAdapter
+                        if (adapter != null) {
+                            WebRtcIntelligenceCoordinator.start(
+                                context = this@VoipCallService,
+                                adapter = adapter,
+                                remoteName = state.remoteName ?: "Unknown"
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -94,16 +110,18 @@ class VoipCallService : LifecycleService() {
                 Notifications.NOTIFICATION_ID_CALL to Notifications.callNotification(this, peer)
         }
 
+        val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+            0
+        }
+
         return try {
             ServiceCompat.startForeground(
                 this,
                 id,
                 notification,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                } else {
-                    0
-                },
+                fgsType,
             )
             // Clear whichever of the two notifications is no longer the current one, so a call that
             // has been answered does not leave a stale "incoming" entry behind.
@@ -115,6 +133,7 @@ class VoipCallService : LifecycleService() {
             getSystemService(NotificationManager::class.java)?.cancel(stale)
             true
         } catch (t: Throwable) {
+            android.util.Log.e("VoipCallService", "startForeground failed", t)
             false
         }
     }

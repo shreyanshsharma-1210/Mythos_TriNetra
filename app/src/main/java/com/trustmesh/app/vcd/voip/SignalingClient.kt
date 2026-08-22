@@ -54,6 +54,7 @@ class SignalingClient(private val scope: CoroutineScope) : Closeable {
             try {
                 val s = Socket()
                 s.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+                Log.i(TAG, "connected to $host:$port")
                 attach(s)
                 true
             } catch (t: Throwable) {
@@ -74,6 +75,7 @@ class SignalingClient(private val scope: CoroutineScope) : Closeable {
         socket = s
         writer = s.getOutputStream().bufferedWriter()
         val reader = s.getInputStream().bufferedReader()
+        Log.i(TAG, "attached socket to ${s.inetAddress?.hostAddress}, starting read loop")
         onConnected?.invoke(s.inetAddress?.hostAddress ?: "peer")
 
         readJob = scope.launch(Dispatchers.IO) { readLoop(reader) }
@@ -97,7 +99,7 @@ class SignalingClient(private val scope: CoroutineScope) : Closeable {
             if (!closed) onClosed?.invoke("The other device closed the connection.")
         } catch (t: Throwable) {
             if (!closed) {
-                Log.e(TAG, "signalling read failed", t)
+                Log.e(TAG, "signalling read failed: ${t.javaClass.simpleName} (${t.message})", t)
                 onClosed?.invoke("Signalling connection lost: ${t.message}")
             }
         }
@@ -109,20 +111,52 @@ class SignalingClient(private val scope: CoroutineScope) : Closeable {
             build()
         }
         scope.launch(Dispatchers.IO) {
-            try {
-                val w = writer ?: return@launch
-                synchronized(this@SignalingClient) {
+            sendDirect(json, type)
+        }
+    }
+
+    fun sendSync(type: String, build: JSONObject.() -> Unit) {
+        val json = JSONObject().apply {
+            put("type", type)
+            build()
+        }
+        sendDirect(json, type)
+    }
+
+    /** Sends a final message and closes the socket immediately after flushing. */
+    fun sendAndClose(type: String, build: JSONObject.() -> Unit) {
+        val json = JSONObject().apply {
+            put("type", type)
+            build()
+        }
+        scope.launch(Dispatchers.IO) {
+            sendDirect(json, type)
+            close()
+        }
+    }
+
+    private fun sendDirect(json: JSONObject, type: String = json.optString("type")) {
+        try {
+            val w = writer
+            if (w == null) {
+                Log.w(TAG, "cannot send '$type': writer is null (closed=$closed)")
+                return
+            }
+            synchronized(this@SignalingClient) {
+                if (!closed) {
                     w.write(json.toString())
                     w.write("\n")
                     w.flush()
+                    Log.d(TAG, "sent signalling message '$type'")
                 }
-            } catch (t: Throwable) {
-                if (!closed) Log.e(TAG, "signalling send failed", t)
             }
+        } catch (t: Throwable) {
+            if (!closed) Log.e(TAG, "signalling send failed for '$type': ${t.javaClass.name} - ${t.message}", t)
         }
     }
 
     override fun close() {
+        if (closed) return
         closed = true
         readJob?.cancel()
         readJob = null

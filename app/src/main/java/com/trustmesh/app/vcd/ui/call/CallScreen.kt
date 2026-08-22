@@ -41,14 +41,18 @@ fun CallScreen(app: VcdApp, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val permission = rememberMicPermissionState()
     val state by CallManager.state.collectAsStateWithLifecycle()
 
-    // The service follows the call, not the screen: a call must survive the user switching apps.
-    LaunchedEffect(state.active, state.remoteName) {
-        if (state.active) VoipCallService.start(context, state.remoteName)
-        else VoipCallService.stop(context)
-    }
-
+    // The service follows the call, not the screen. CallManager starts and stops the service;
+    // the UI must not issue a second startForegroundService() call because Android's 5-second
+    // ANR timer fires on the duplicate before startForeground() can be called, crashing the app.
+    //
+    // CRITICAL: this composable is disposed and immediately recreated when the shell swaps the
+    // tab-hosted dialer for the full-screen call UI the instant a call arrives (AppShell has two
+    // CallScreen call sites). Stopping the service on every dispose sends ACTION_STOP →
+    // CallManager.hangUp(), which tore down every incoming call ~120 ms after it arrived, before
+    // the invite could even be read — the "missed call" bug. Only stop when no call is live; the
+    // service otherwise stops itself once the call reaches a terminal state.
     DisposableEffect(Unit) {
-        onDispose { VoipCallService.stop(context) }
+        onDispose { if (!CallManager.inCall) VoipCallService.stop(context) }
     }
 
     BackHandler(enabled = state.onCallScreen) {

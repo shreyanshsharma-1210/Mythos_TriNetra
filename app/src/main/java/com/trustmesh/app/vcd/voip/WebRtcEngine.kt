@@ -17,6 +17,7 @@ import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.audio.JavaAudioDeviceModule
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Thin wrapper over the WebRTC peer connection.
@@ -50,10 +51,14 @@ class WebRtcEngine(private val context: Context) : Closeable {
     var remoteSink: RemoteAudioAdapter? = null
 
     fun start(iceServers: List<PeerConnection.IceServer> = emptyList()) {
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context)
-                .createInitializationOptions()
-        )
+        // initialize() must only be called once per process lifetime — calling it again after the
+        // first call session causes a native JNI crash on Samsung / MIUI devices.
+        if (initialized.compareAndSet(false, true)) {
+            PeerConnectionFactory.initialize(
+                PeerConnectionFactory.InitializationOptions.builder(context)
+                    .createInitializationOptions()
+            )
+        }
 
         // Hardware AEC and NS are left on. They act on this device's *outgoing* microphone audio,
         // not on the incoming track the models analyse, so switching them off would only degrade
@@ -216,7 +221,9 @@ class WebRtcEngine(private val context: Context) : Closeable {
     }
 
     override fun close() {
-        remoteSink?.let { sink -> runCatching { remoteTrack?.removeSink(sink) } }
+        remoteSink?.let { sink ->
+            runCatching { remoteTrack?.removeSink(sink) }
+        }
         remoteTrack = null
         runCatching { peerConnection?.dispose() }
         peerConnection = null
@@ -224,16 +231,26 @@ class WebRtcEngine(private val context: Context) : Closeable {
         localTrack = null
         runCatching { localSource?.dispose() }
         localSource = null
-        runCatching { factory?.dispose() }
-        factory = null
+        // Do NOT dispose the factory — disposing and then re-creating it on the next call causes
+        // a JNI SIGSEGV crash on the second session. The factory is cheap to hold alive.
+        // audioDeviceModule must be released but factory is kept.
         runCatching { audioDeviceModule?.release() }
         audioDeviceModule = null
+        factory = null
     }
 
     private companion object {
         const val TAG = "WebRtcEngine"
         const val LOCAL_TRACK_ID = "vcd-local-audio"
         const val STREAM_ID = "vcd-stream"
+
+        /** Ensures PeerConnectionFactory.initialize() is called only once per process. */
+        val initialized = AtomicBoolean(false)
+
+        val DEFAULT_ICE_SERVERS = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer(),
+        )
     }
 
     /** Track state helper used by diagnostics. */

@@ -18,11 +18,12 @@
     <!-- Internet + network: WebRTC signaling and peer discovery -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- Full-screen intent: incoming VoIP call must own the screen (API 34+) -->
-    <uses-permission
-        android:name="android.permission.USE_FULL_SCREEN_INTENT"
-        android:minSdkVersion="34" />
+    <!-- Full-screen intent: lets incoming-call notification wake the screen.
+         On API 34+ this became a special permission requiring user approval in Settings. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
@@ -41,7 +42,9 @@
         android:theme="@style/Theme.Trinetra">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
