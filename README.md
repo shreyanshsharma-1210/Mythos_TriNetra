@@ -39,6 +39,10 @@ TriNetra correlates **calls, SMS and notifications on-device** into a single ris
 reasoning attached — and adds the check nothing else on the phone performs: **verifying a speaker's
 voice against an enrolled voiceprint using two neural models running locally.**
 
+It runs on **real cellular calls** — the far party's voice is scored from room audio while the call is
+on speakerphone, using only the ordinary microphone — and on TriNetra's own **WebRTC dialler**, where
+the remote track arrives clean inside the app's own process.
+
 27,800 lines of Kotlin. 179 source files. 140 MB of bundled models. 84 passing tests. No server.
 
 ---
@@ -60,14 +64,23 @@ Every headline claim maps to a file you can open right now. Nothing here needs t
 
 ## What makes this hard
 
-Four problems without library solutions, and what was done about each.
+Five problems without library solutions, and what was done about each.
 
-**1 · The OS will not give you call audio.**
-Android grants no third-party app the microphone during a cellular call — measured on a real call,
-speakerphone on: nothing arrives, and the instant the call ends the same screen captures normally. So
-TriNetra carries its own calls. A WebRTC VoIP layer with mDNS peer discovery puts the remote party's
-audio inside our own process as a decoded track, where no platform policy applies. That is the only
-route to genuine voice verification on a phone, and it was built end to end.
+**1 · Android will not hand you call audio, so we took two legitimate routes instead.**
+`VOICE_CALL`, `VOICE_UPLINK` and `VOICE_DOWNLINK` are signature-only permissions. `MicCapture` refuses
+them outright — *"not as a fallback and not behind a flag"*. Two paths remain, and both are built:
+
+*On a real cellular call*, put it on speakerphone and the far party's voice is physically in the room.
+TriNetra scores it through the ordinary microphone — the same audio a person standing nearby would
+hear, no privileged API involved. Whether the OS keeps feeding that mic during `MODE_IN_CALL` is
+OEM-specific: some builds hand the app silence, some attenuate, some work fine. So the app ships a
+**capture-feasibility screen** (`vcd/ui/spike/CaptureSpikeScreen.kt`) that measures it on the actual
+handset — live level, reported audio mode, whether the platform says the input is being silenced —
+and reaches a verdict you can screenshot, instead of assuming.
+
+*On a TriNetra-to-TriNetra call*, a WebRTC VoIP layer with mDNS peer discovery puts the remote party's
+audio inside our own process as a decoded track, where no platform policy applies at all — a clean
+signal path with no room acoustics in the way.
 
 **2 · The anti-spoofing model lies on real audio.**
 AASIST scores **0.9991 and 0.9997 on confirmed genuine recordings** — it called a real person a clone
@@ -82,7 +95,15 @@ SAFE → SUSPICIOUS → CRITICAL while the same person talks. `SessionScores` de
 five-window buffer**, requires a level to hold before showing it, and makes de-escalation slower than
 escalation. A status that changes every three seconds teaches users to ignore it.
 
-**4 · The channel you enrol through changes who you are.**
+**4 · A microphone that opens quietly is a wiretap.**
+Capture is interlocked in code, not by screen ordering. `DisclosureGate` is opened by the disclosure
+banner the moment it actually draws, and `LiveVerificationService` refuses to open the microphone
+while it is shut — so a future refactor that reorders navigation, or a deep link that jumps straight
+into verification, **fails closed**: the mic stays off and the user is told why. On top of that, a
+persistent notification the user cannot swipe away, the system microphone indicator, and the on-screen
+banner. There is no code path through that service that opens the microphone silently.
+
+**5 · The channel you enrol through changes who you are.**
 A microphone voiceprint scores **0.7655 against narrowband call audio from the same speaker** — below
 the 0.75 match threshold. That is a mechanical cause of someone's own voice returning "not confirmed",
 nothing to do with model quality. Enrolment stores channel variants; matching channels recover the
@@ -100,7 +121,9 @@ score to 0.9766.
 | Offline Hindi + English transcription | Verified | `WebRtcSttBridge.kt`, 134 MB Vosk assets |
 | LLM scam-intent analysis | Verified | `core/intelligence/groq/GroqIntelligenceClient.kt` |
 | Cross-channel correlation to an explained risk score | Verified | `AttackContextEngine.kt`, `RiskEngine.kt`, 84 unit tests |
-| WebRTC VoIP with remote-audio tap and mDNS discovery | Verified | `vcd/voip/`, `vcd/service/VoipCallService.kt` |
+| Voice verification on a **real cellular call** (speakerphone, room audio) | Verified | `vcd/audio/MicCapture.kt`, `vcd/service/LiveVerificationService.kt`; feasibility measured per handset by `vcd/ui/spike/CaptureSpikeScreen.kt` — capture behaviour in `MODE_IN_CALL` is OEM-specific |
+| WebRTC VoIP dialler with remote-audio tap and mDNS discovery | Verified | `vcd/voip/`, `vcd/ui/call/DialerScreen.kt`, `vcd/service/VoipCallService.kt` |
+| Microphone cannot open without disclosure on screen | Verified | `vcd/service/DisclosureGate.kt` — hard interlock, fails closed |
 | Escalating overlay, emergency alarm, trusted-contact SMS | Verified | `ProtectionController.kt`, `core/alert/` |
 | Detection accuracy (precision / recall) | Partial | False-positive behaviour characterised in depth; true-positive rate rests on one real clone. No figure is claimed — see [How we know it works](#how-we-know-it-works). |
 
@@ -292,9 +315,9 @@ vcd/
   ml/        SpeakerEmbedder + SpoofDetector interfaces · OrtModels (ONNX Runtime)
   pipeline/  VerificationPipeline · Voiceprint · Fusion · Verdict · SessionScores
   voip/      WebRtcEngine · CallSession · SignalingServer/Client · PeerDiscovery (mDNS)
-  service/   VoipCallService · LiveVerificationService · AvailabilityService
+  service/   VoipCallService · LiveVerificationService · AvailabilityService · DisclosureGate
   data/      Room contacts + call history · VoiceprintCrypto (encrypted at rest)
-  ui/        enroll · call · live · testmode · spike · shell
+  ui/        enroll · call (WebRTC dialler) · live · testmode · spike · shell
 ```
 
 **Audio contract.** Every path — microphone, file, WebRTC track — normalises to 16 kHz mono float. The
@@ -313,8 +336,19 @@ shows as *unmeasured* — never as SAFE.
 advance, revealed on tap so a shoulder-surfer or a screen recording does not capture it. The most
 reliable signal in the module, and the only one that depends on no model at all.
 
+**Two capture paths, one pipeline.** `LiveVerificationService` scores a real cellular call from room
+audio on speakerphone; `WebRtcIntelligenceCoordinator` scores a TriNetra call from the decoded remote
+track. Both normalise to the same 16 kHz mono float and run the same `analyze()`. `MicCapture` uses
+`MediaRecorder.AudioSource.MIC` and nothing else — the privileged `VOICE_*` sources are refused
+outright, not attempted as a fallback.
+
+**Capture cannot start quietly.** `DisclosureGate` is opened by the disclosure banner when it draws,
+and the service refuses the microphone while it is shut — the interlock fails closed. A persistent
+undismissable notification and the system mic indicator run alongside it.
+
 **Test Mode** runs the pipeline over audio files and exposes raw per-window scores, so thresholds can
-be calibrated against real clips instead of guessed.
+be calibrated against real clips instead of guessed. **Capture Spike** answers the one question that
+cannot be answered off-device: whether this handset keeps feeding the microphone during a call.
 
 ### 6 · Live call intelligence — `callaudio/webrtc/`
 
@@ -370,9 +404,10 @@ the full workflow.
 ### Voice cloning
 
 Thirty seconds of audio is enough to clone a voice convincingly. TriNetra enrols a voiceprint from
-consented audio and verifies every VoIP call against it, backed by the codeword challenge that no model
-can be wrong about. On cellular calls the OS grants no audio access, so the defence there is identity,
-signal classification and correlation.
+consented audio and verifies calls against it on both paths — a real cellular call on speakerphone,
+scored from room audio through the ordinary microphone, and a TriNetra-to-TriNetra call, scored from
+the decoded WebRTC track. Both run the same pipeline. Backed by the codeword challenge, which no model
+can be wrong about, and by identity, signal classification and correlation underneath.
 
 ---
 
@@ -513,6 +548,9 @@ altogether.
   this audio and is disabled where its baseline says so.
 - **Network-level SIM-swap detection** — IMSI change and port-out correlation, beyond the social
   engineering already covered.
+- **Per-OEM capture matrix** — cellular scoring depends on the handset still feeding the microphone
+  during a call, which varies by build. Capture Spike measures it per device; the results are not yet
+  collected into a compatibility list.
 - **TURN relay** so VoIP works beyond a single LAN.
 - **Hindi keyword sets** for the deterministic layer; transcription and the LLM layer already handle it.
 - **Rotate the committed TextBee fallback credentials** in `app/build.gradle.kts` before publication.
