@@ -96,6 +96,20 @@ object SecurityIncidentManager {
         }
     }
 
+    fun dismissAllActiveIncidents() {
+        scope.launch {
+            val activeList = _incidents.value.filter { it.status == IncidentStatus.ACTIVE }
+            for (incident in activeList) {
+                val updated = incident.copy(
+                    status = IncidentStatus.DISMISSED,
+                    resolvedAt = System.currentTimeMillis()
+                )
+                dao?.updateIncident(updated.toEntity())
+            }
+        }
+    }
+
+
     private fun SecurityIncidentEntity.toDomain(): SecurityIncident {
         val callerIdentity = if (callerPhoneNumber != null) {
             com.trustmesh.app.core.identity.CallerIdentity(

@@ -7,10 +7,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -54,23 +58,102 @@ fun ProtectionOverlay(
     android.util.Log.d("TrustMeshIdentity", "overlayRecomposed=true identity=$identityName")
     
     val interactions by InteractionManager.interactions.collectAsState()
-    val currentInteraction = interactions.firstOrNull()
+    val currentInteraction = interactions.firstOrNull {
+        it.evidence.contains("Incoming call") || it.evidence.contains("Outgoing call") || it.appName == "Phone"
+    } ?: interactions.firstOrNull()
+
+    var isMinimizedByUser by remember(fallbackNumber) { mutableStateOf(false) }
+
+    LaunchedEffect(state) {
+        if (state == CallOverlayState.INCOMING) {
+            isMinimizedByUser = false
+        }
+    }
+
+    val context = LocalContext.current
+    LaunchedEffect(riskLevel) {
+        if (state == CallOverlayState.ACTIVE || state == CallOverlayState.INCOMING) {
+            if (riskLevel == RiskLevel.CRITICAL || riskLevel == RiskLevel.HIGH) {
+                isMinimizedByUser = false
+                try {
+                    val vibrator = context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                    if (vibrator != null && vibrator.hasVibrator()) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            val timings = longArrayOf(0, 500, 200, 500)
+                            val amplitudes = intArrayOf(0, 255, 0, 255)
+                            val effect = android.os.VibrationEffect.createWaveform(timings, amplitudes, -1)
+                            vibrator.vibrate(effect)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            vibrator.vibrate(longArrayOf(0, 500, 200, 500), -1)
+                        }
+                        android.util.Log.i("TrustMeshOverlay", "Critical risk vibration triggered")
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("TrustMeshOverlay", "Failed to vibrate", e)
+                }
+            }
+        }
+    }
+
+    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interactions)
 
     when (state) {
         CallOverlayState.INCOMING -> {
-            if (riskLevel == RiskLevel.CRITICAL) {
-                FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss)
+            if (isMinimizedByUser) {
+                ActiveCallStatusBox(
+                    callerIdentity = callerIdentity,
+                    fallbackName = fallbackName,
+                    fallbackNumber = fallbackNumber,
+                    riskLevel = riskLevel,
+                    riskAssessment = riskAssessment,
+                    activeIncident = activeIncident,
+                    interaction = currentInteraction,
+                    onDismiss = { isMinimizedByUser = true },
+                    onExpandRequested = { isMinimizedByUser = false },
+                    customVoice = customVoice
+                )
             } else {
-                FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss)
+                if (riskLevel == RiskLevel.CRITICAL) {
+                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                } else {
+                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                }
             }
         }
         CallOverlayState.ACTIVE -> {
-            if (riskLevel == RiskLevel.CRITICAL) {
-                FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss)
-            } else if (riskLevel == RiskLevel.HIGH) {
-                FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss)
+            if (isMinimizedByUser) {
+                ActiveCallStatusBox(
+                    callerIdentity = callerIdentity,
+                    fallbackName = fallbackName,
+                    fallbackNumber = fallbackNumber,
+                    riskLevel = riskLevel,
+                    riskAssessment = riskAssessment,
+                    activeIncident = activeIncident,
+                    interaction = currentInteraction,
+                    onDismiss = { isMinimizedByUser = true },
+                    onExpandRequested = { isMinimizedByUser = false },
+                    customVoice = customVoice
+                )
             } else {
-                ActiveCallStatusBox(callerIdentity, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss)
+                if (riskLevel == RiskLevel.CRITICAL) {
+                    FullScreenSecurityOverlay(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                } else if (riskLevel == RiskLevel.HIGH) {
+                    FloatingRiskCard(callerIdentity, callerReputation, fallbackName, fallbackNumber, riskLevel, riskAssessment, activeIncident, currentInteraction, onDismiss = { isMinimizedByUser = true })
+                } else {
+                    ActiveCallStatusBox(
+                        callerIdentity = callerIdentity,
+                        fallbackName = fallbackName,
+                        fallbackNumber = fallbackNumber,
+                        riskLevel = riskLevel,
+                        riskAssessment = riskAssessment,
+                        activeIncident = activeIncident,
+                        interaction = currentInteraction,
+                        onDismiss = { isMinimizedByUser = true },
+                        onExpandRequested = null,
+                        customVoice = customVoice
+                    )
+                }
             }
         }
         CallOverlayState.SUMMARY -> {
@@ -86,22 +169,33 @@ private fun getCustomVoiceMatchInfo(
     callerIdentity: CallerIdentity?,
     fallbackName: String,
     fallbackNumber: String,
-    interaction: com.trustmesh.app.interaction.Interaction? = null
+    interactions: List<com.trustmesh.app.interaction.Interaction>
 ): Pair<String, String>? {
     val number = (callerIdentity?.phoneNumber ?: fallbackNumber).trim()
     val name = (callerIdentity?.displayName ?: fallbackName).trim()
 
-    val interactionBlob = listOfNotNull(
-        interaction?.title,
-        interaction?.notificationTitle,
-        interaction?.notificationText,
-        interaction?.summary,
-        interaction?.evidence?.joinToString(" "),
-        interaction?.timeline?.joinToString(" ")
-    ).joinToString(" ")
+    var is6000 = number.contains("6000") || name.contains("6000") || fallbackNumber.contains("6000") || fallbackName.contains("6000")
+    var is7000 = number.contains("7000") || name.contains("7000") || fallbackNumber.contains("7000") || fallbackName.contains("7000")
 
-    val is6000 = number.contains("6000") || name.contains("6000") || fallbackNumber.contains("6000") || fallbackName.contains("6000") || interactionBlob.contains("6000")
-    val is7000 = number.contains("7000") || name.contains("7000") || fallbackNumber.contains("7000") || fallbackName.contains("7000") || interactionBlob.contains("7000")
+    val thresholdTime = System.currentTimeMillis() - 30_000
+    for (item in interactions) {
+        if (item.timestampMs >= thresholdTime || item.timestampMs == 0L) {
+            val blob = listOfNotNull(
+                item.title,
+                item.notificationTitle,
+                item.notificationText,
+                item.summary,
+                item.evidence?.joinToString(" "),
+                item.timeline?.joinToString(" ")
+            ).joinToString(" ")
+            if (blob.contains("6000")) {
+                is6000 = true
+            }
+            if (blob.contains("7000")) {
+                is7000 = true
+            }
+        }
+    }
 
     return when {
         is6000 -> {
@@ -121,17 +215,32 @@ private fun getCustomVoiceMatchInfo(
     }
 }
 
+private fun getCustomVoiceMatchInfo(
+    callerIdentity: CallerIdentity?,
+    fallbackName: String,
+    fallbackNumber: String,
+    interaction: com.trustmesh.app.interaction.Interaction? = null
+): Pair<String, String>? {
+    return getCustomVoiceMatchInfo(
+        callerIdentity,
+        fallbackName,
+        fallbackNumber,
+        if (interaction != null) listOf(interaction) else emptyList()
+    )
+}
+
 @Composable
 fun RealtimeRiskGraph(
     currentScore: Int,
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     modifier: Modifier = Modifier,
-    interaction: com.trustmesh.app.interaction.Interaction? = null
+    interaction: com.trustmesh.app.interaction.Interaction? = null,
+    customVoice: Pair<String, String>? = null
 ) {
     // 1. Exception handling for 6000 / 7000 OTP
-    val customVoice = getCustomVoiceMatchInfo(null, "", "", interaction)
-    val isGenuine = customVoice?.first == "Normal User Voice Matched"
-    val isCloned = customVoice?.first == "⚠️ Likely Cloned Voice"
+    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(null, "", "", interaction)
+    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
+    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
 
     val targetScore = when {
         isGenuine -> 5
@@ -180,50 +289,73 @@ fun RealtimeRiskGraph(
     }
 
     val lineColor = when {
-        isGenuine -> Color(0xFF34A853) // Force green
-        isCloned -> Color(0xFFEA4335)  // Force red
-        animatedScore >= 70f -> Color(0xFFEA4335)
-        animatedScore >= 35f -> Color(0xFFFBBC05)
-        else -> Color(0xFF34A853)
+        isGenuine -> Color(0xFF1B8A5A) // Force green
+        isCloned -> Color(0xFFDC2626)  // Force red
+        animatedScore >= 70f -> Color(0xFFDC2626)
+        animatedScore >= 35f -> Color(0xFFD97706)
+        else -> Color(0xFF1B8A5A)
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF0F172A).copy(alpha = 0.85f), RoundedCornerShape(12.dp))
-            .padding(10.dp)
+            .background(Color(0xFFFAF8F5), RoundedCornerShape(16.dp))
+            .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), RoundedCornerShape(16.dp))
+            .padding(12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Column {
+                Text(
+                    text = "LIVE MULTI-LAYER RISK",
+                    color = Color(0xFF0F172A),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "● ANALYZING CALL IN REAL TIME",
+                    color = Color(0xFF028090),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Text(
-                text = "📊 Live Multi-Layer Risk (L1-L6)",
-                color = Color(0xFF00E5FF),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "${animatedScore.toInt()}% Risk",
+                text = "${animatedScore.toInt()}% THREAT",
                 color = lineColor,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Black
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
+                .height(48.dp)
         ) {
             val width = size.width
             val height = size.height
             val points = basePoints
 
             if (points.isEmpty()) return@Canvas
+
+            // Draw thin grid lines
+            val gridColor = Color(0xFFE2E8F0)
+            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+            for (pct in listOf(0.25f, 0.50f, 0.75f)) {
+                val y = height * (1f - pct)
+                drawLine(
+                    color = gridColor,
+                    start = Offset(0f, y),
+                    end = Offset(width, y),
+                    pathEffect = dashEffect,
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
 
             val stepX = width / (points.size - 1)
             val path = Path()
@@ -256,8 +388,8 @@ fun RealtimeRiskGraph(
                 path = fillPath,
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        lineColor.copy(alpha = 0.45f),
-                        lineColor.copy(alpha = 0.05f)
+                        lineColor.copy(alpha = 0.35f),
+                        lineColor.copy(alpha = 0.02f)
                     )
                 )
             )
@@ -274,21 +406,28 @@ fun RealtimeRiskGraph(
                 val isCurrent = (i == points.size - 1)
 
                 drawCircle(
-                    color = if (isCurrent) lineColor else Color.White.copy(alpha = 0.8f),
-                    radius = if (isCurrent) 4.5.dp.toPx() else 2.dp.toPx(),
+                    color = if (isCurrent) lineColor else Color.White,
+                    radius = if (isCurrent) 5.dp.toPx() else 2.5.dp.toPx(),
                     center = Offset(px, py)
                 )
                 if (isCurrent) {
                     drawCircle(
-                        color = lineColor.copy(alpha = 0.35f),
-                        radius = 9.dp.toPx(),
+                        color = lineColor.copy(alpha = 0.3f),
+                        radius = 10.dp.toPx(),
                         center = Offset(px, py)
+                    )
+                } else {
+                    drawCircle(
+                        color = lineColor.copy(alpha = 0.5f),
+                        radius = 2.5.dp.toPx(),
+                        center = Offset(px, py),
+                        style = Stroke(width = 1.dp.toPx())
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -296,13 +435,341 @@ fun RealtimeRiskGraph(
         ) {
             val layers = listOf("L1 Sig", "L2 Id", "L3 Voice", "L4 Groq", "L5 Ctx", "L6 Fuse")
             layers.forEachIndexed { idx, label ->
-                val isActive = idx <= (basePoints.size - 1)
+                val isActive = idx <= (basePoints.size - 2)
                 Text(
                     text = label,
                     fontSize = 8.sp,
-                    color = if (isActive) Color(0xFFB0C4DE) else Color(0xFF4A5568),
+                    color = if (isActive) Color(0xFF0F172A) else Color(0xFF94A3B8),
                     fontWeight = if (idx == layers.lastIndex) FontWeight.Bold else FontWeight.Normal
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun PremiumNotificationOverlayCard(
+    callerIdentity: CallerIdentity?,
+    callerReputation: com.trustmesh.app.core.identity.CallerReputation?,
+    fallbackName: String,
+    fallbackNumber: String,
+    riskLevel: RiskLevel,
+    riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
+    activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
+    interaction: com.trustmesh.app.interaction.Interaction? = null,
+    onDismiss: () -> Unit,
+    onCollapse: (() -> Unit)? = null,
+    customVoice: Pair<String, String>? = null
+) {
+    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
+    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
+    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
+    
+    val effectiveRiskLevel = when {
+        isGenuine -> RiskLevel.LOW
+        isCloned -> RiskLevel.CRITICAL
+        else -> riskLevel
+    }
+
+    val themeColor = when (effectiveRiskLevel) {
+        RiskLevel.CRITICAL -> Color(0xFFDC2626) // Red
+        RiskLevel.HIGH -> Color(0xFFDC2626) // Red
+        RiskLevel.ELEVATED -> Color(0xFFD97706) // Amber/Yellow
+        RiskLevel.LOW -> Color(0xFF1B8A5A) // Green
+    }
+
+    val score = when {
+        isGenuine -> 5
+        isCloned -> 95
+        else -> riskAssessment?.score ?: 0
+    }
+
+    val explanation = finalCustomVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Analyzing live conversation metrics...")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFAF8F5), RoundedCornerShape(24.dp))
+            .border(BorderStroke(1.5.dp, themeColor), RoundedCornerShape(24.dp))
+            .padding(18.dp)
+    ) {
+        // 1. Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                    Text(
+                        text = "TRINETRA",
+                        color = Color(0xFF0F172A),
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "CALL SECURITY",
+                        color = Color(0xFF64748B),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 8.sp,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "● LIVE PROTECTION",
+                    color = Color(0xFF028090),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                // Circular Close Button
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "✕",
+                        color = Color(0xFF0F172A),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // 2. Caller Info and Reputation Hero Section
+        val name = finalCustomVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { "Unknown Caller" })
+        val num = callerIdentity?.phoneNumber ?: fallbackNumber
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF1EDE4).copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), RoundedCornerShape(16.dp))
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Caller Initial/Avatar
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color(0xFF0F172A), RoundedCornerShape(20.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = name.take(1).uppercase(),
+                    color = Color(0xFFFAF8F5),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    maxLines = 1
+                )
+                if (num.isNotBlank() && finalCustomVoice == null) {
+                    Text(
+                        text = num,
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                }
+                if (callerReputation != null && callerReputation.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
+                    Text(
+                        text = "Directory: ${callerReputation.displayName ?: callerReputation.category.name}",
+                        color = Color(0xFF028090),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            // Risk Badge
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "${score}%",
+                    color = themeColor,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = effectiveRiskLevel.displayName,
+                    color = themeColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 9.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 3. Explanation text
+        Text(
+            text = explanation,
+            color = Color(0xFF0F172A),
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium
+        )
+
+        // 4. AI Insight Section (Groq Response)
+        val groqResp = interaction?.groqResponse
+        if (groqResp != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFE0F2F1), RoundedCornerShape(12.dp))
+                    .border(BorderStroke(1.dp, Color(0xFFB2DFDB)), RoundedCornerShape(12.dp))
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = "🧠 AI SEMANTIC ANALYSIS (GROQ)",
+                    color = Color(0xFF028090),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = groqResp.summaryReasoning,
+                    color = Color(0xFF0F172A),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+                if (groqResp.psychologicalTriggers.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Triggers detected: ${groqResp.psychologicalTriggers.joinToString(", ")}",
+                        color = Color(0xFFD97706),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 5. Multi-Layer Risk Oscilloscope Graph
+        RealtimeRiskGraph(
+            currentScore = score,
+            riskAssessment = riskAssessment,
+            interaction = interaction,
+            customVoice = finalCustomVoice
+        )
+
+        // 6. Evidence & Recommended Actions List
+        val evidence = riskAssessment?.evidence ?: listOf("Incoming call stream active")
+        val recommendations = activeIncident?.recommendedActions ?: emptyList()
+
+        if (evidence.isNotEmpty() || recommendations.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFAF8F5), RoundedCornerShape(12.dp))
+                    .border(BorderStroke(1.dp, Color(0xFFE2E8F0)), RoundedCornerShape(12.dp))
+                    .padding(10.dp)
+            ) {
+                if (evidence.isNotEmpty()) {
+                    Text(
+                        text = "SECURITY SIGNALS",
+                        color = Color(0xFF64748B),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    evidence.take(3).forEach { ev ->
+                        Text(
+                            text = "• $ev",
+                            color = Color(0xFF0F172A),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                if (recommendations.isNotEmpty()) {
+                    if (evidence.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    Text(
+                        text = "RECOMMENDED ACTIONS",
+                        color = Color(0xFFDC2626),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    recommendations.forEach { rec ->
+                        Text(
+                            text = "• $rec",
+                            color = Color(0xFF0F172A),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 7. Footer / Safety Banner
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "🛡 Zero audio is recorded or processed externally. Active call cannot be retroactively blocked.",
+                color = Color(0xFF1B8A5A),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Collapse Button (if available)
+        if (onCollapse != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                TextButton(
+                    onClick = onCollapse,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text(
+                        text = "Collapse Overlay",
+                        color = Color(0xFF028090),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -317,20 +784,15 @@ fun ActiveCallStatusBox(
     riskAssessment: com.trustmesh.app.core.intelligence.risk.RiskAssessment?,
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     interaction: com.trustmesh.app.interaction.Interaction? = null,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onExpandRequested: (() -> Unit)? = null,
+    customVoice: Pair<String, String>? = null
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
+    var isExpanded by remember(onExpandRequested) { mutableStateOf(onExpandRequested == null) }
 
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A).copy(alpha = 0.96f),
-            Color(0xFF1E1E38).copy(alpha = 0.96f)
-        )
-    )
-
-    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = customVoice?.first == "Normal User Voice Matched"
-    val isCloned = customVoice?.first == "⚠️ Likely Cloned Voice"
+    val finalCustomVoice = customVoice ?: getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
+    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
+    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
     
     val effectiveRiskLevel = when {
         isGenuine -> RiskLevel.LOW
@@ -339,13 +801,13 @@ fun ActiveCallStatusBox(
     }
 
     val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFEA4335)
-        RiskLevel.HIGH -> Color(0xFFEA4335)
-        RiskLevel.ELEVATED -> Color(0xFFFBBC05)
-        RiskLevel.LOW -> Color(0xFF34A853) // Green for Genuine override!
+        RiskLevel.CRITICAL -> Color(0xFFDC2626)
+        RiskLevel.HIGH -> Color(0xFFDC2626)
+        RiskLevel.ELEVATED -> Color(0xFFD97706)
+        RiskLevel.LOW -> Color(0xFF1B8A5A)
     }
 
-    Surface(
+    Box(
         modifier = Modifier
             .padding(8.dp)
             .pointerInput(Unit) {
@@ -353,20 +815,18 @@ fun ActiveCallStatusBox(
                     change.consume()
                     ProtectionController.updatePosition(dragAmount.x.toInt(), dragAmount.y.toInt())
                 }
-            },
-        shape = RoundedCornerShape(14.dp),
-        color = Color.Transparent,
-        border = BorderStroke(
-            width = 1.5.dp,
-            color = themeColor
-        ),
-        shadowElevation = 10.dp
+            }
     ) {
-        Box(modifier = Modifier.background(brush = overlayGradient)) {
-            if (!isExpanded) {
+        if (!isExpanded) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color(0xFFFAF8F5),
+                border = BorderStroke(width = 1.5.dp, color = themeColor),
+                shadowElevation = 8.dp
+            ) {
                 Row(
                     modifier = Modifier
-                        .clickable { isExpanded = true }
+                        .clickable { if (onExpandRequested != null) onExpandRequested() else isExpanded = true }
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -382,128 +842,39 @@ fun ActiveCallStatusBox(
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
-                    val identifier = customVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { callerIdentity?.phoneNumber ?: fallbackNumber })
+                    val identifier = finalCustomVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { callerIdentity?.phoneNumber ?: fallbackNumber })
                     if (identifier.isNotBlank()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "• $identifier",
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontSize = 12.sp,
                             maxLines = 1
                         )
                     }
                 }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .width(280.dp)
-                        .clickable { isExpanded = false }
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("TriNetra Protection", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        } else {
+            Box(modifier = Modifier.width(300.dp)) {
+                PremiumNotificationOverlayCard(
+                    callerIdentity = callerIdentity,
+                    callerReputation = null,
+                    fallbackName = fallbackName,
+                    fallbackNumber = fallbackNumber,
+                    riskLevel = riskLevel,
+                    riskAssessment = riskAssessment,
+                    activeIncident = activeIncident,
+                    interaction = interaction,
+                    onDismiss = onDismiss,
+                    onCollapse = {
+                        if (onExpandRequested != null) {
+                            onDismiss()
+                        } else {
+                            isExpanded = false
                         }
-                        Text(
-                            text = "Collapse",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val name = customVoice?.first ?: (callerIdentity?.displayName ?: fallbackName.ifBlank { "Unknown Caller" })
-                    val num = callerIdentity?.phoneNumber ?: fallbackNumber
-                    Text(name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    if (num.isNotBlank() && customVoice == null) {
-                        Text(num, color = Color.Gray, fontSize = 12.sp)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Risk Level: ", color = Color.LightGray, fontSize = 13.sp)
-                        Text(
-                            text = effectiveRiskLevel.displayName,
-                            color = themeColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        val scoreToDisplay = when {
-                            isGenuine -> 5
-                            isCloned -> 95
-                            else -> riskAssessment?.score ?: 0
-                        }
-                        Text("  •  Score: $scoreToDisplay", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    val explanation = customVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Monitoring call events locally...")
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(explanation, color = Color.LightGray, fontSize = 12.sp)
-
-                    val groqResp = interaction?.groqResponse
-                    if (groqResp != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "🧠 AI Threat Insight (Groq)",
-                                color = Color(0xFF00E5FF),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = groqResp.summaryReasoning,
-                                color = Color.White,
-                                fontSize = 11.sp
-                            )
-                            if (groqResp.psychologicalTriggers.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}",
-                                    color = Color(0xFFFBBC05),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    RealtimeRiskGraph(
-                        currentScore = riskAssessment?.score ?: 0,
-                        riskAssessment = riskAssessment,
-                        interaction = interaction
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(
-                            onClick = { onDismiss() },
-                            modifier = Modifier.height(32.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("Dismiss Overlay", color = Color(0xFFEA4335), fontSize = 12.sp)
-                        }
-                    }
-                }
+                    },
+                    customVoice = finalCustomVoice
+                )
             }
         }
     }
@@ -518,189 +889,191 @@ fun CallSummaryOverlay(
 ) {
     val context = LocalContext.current
 
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A).copy(alpha = 0.98f),
-            Color(0xFF1E1E38).copy(alpha = 0.98f)
-        )
-    )
-
     Surface(
         modifier = Modifier
             .padding(16.dp)
             .width(320.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.Transparent,
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFFFAF8F5),
         shadowElevation = 16.dp,
-        border = BorderStroke(width = 1.5.dp, color = Color(0xFF00E5FF))
+        border = BorderStroke(width = 1.5.dp, color = Color(0xFFE2E8F0))
     ) {
-        Box(modifier = Modifier.background(brush = overlayGradient)) {
-            Column(
-                modifier = Modifier.padding(20.dp)
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🛡", fontSize = 20.sp)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("TriNetra Call Summary", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                val callerIdentity = interaction?.callerIdentity
-                val displayName = callerIdentity?.displayName ?: "Unknown Name"
-                val phoneNumber = callerIdentity?.phoneNumber ?: interaction?.title ?: "Not available"
-
-                Text("Caller:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text(phoneNumber, color = Color.LightGray, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val dateTime = interaction?.timestamp ?: "Not available"
-                Text("Date / Time:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(dateTime, color = Color.White, fontSize = 13.sp)
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val durationText = if (activeCallDurationSeconds > 0) "$activeCallDurationSeconds seconds" else "Not available"
-                Text("Call Duration:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(durationText, color = Color.White, fontSize = 13.sp)
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val riskLevel = interaction?.riskLevel ?: RiskLevel.LOW
-                val score = interaction?.riskAssessment?.score ?: 0
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text("Risk Level:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            text = riskLevel.displayName,
-                            color = when (riskLevel) {
-                                RiskLevel.CRITICAL, RiskLevel.HIGH -> Color(0xFFEA4335)
-                                RiskLevel.ELEVATED -> Color(0xFFFBBC05)
-                                RiskLevel.LOW -> Color(0xFF34A853)
-                            },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Risk Score:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        Text("$score / 100", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-
-                RealtimeRiskGraph(
-                    currentScore = score,
-                    riskAssessment = interaction?.riskAssessment
+                Image(
+                    painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                val rep = interaction?.callerReputation
-                if (rep != null && rep.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
-                    Text("Reputation:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        text = "${rep.reputationLevel.name.replace("_", " ")} (${rep.source})",
-                        color = if (rep.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) Color(0xFFEA4335) else Color(0xFFFBBC05),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                if (activeIncident != null) {
-                    Text("Security Incident:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        text = "${activeIncident.incidentType.name.replace("_", " ")} [${activeIncident.severity}]",
-                        color = Color(0xFFEA4335),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                val explanation = interaction?.riskAssessment?.explanation ?: "No details available."
-                Text("Explanation:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(explanation, color = Color.LightGray, fontSize = 12.sp, maxLines = 3)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val factors = interaction?.riskAssessment?.factors ?: emptyList()
-                if (factors.isNotEmpty()) {
-                    Text("Risk Factors:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    factors.take(3).forEach { factor ->
-                        Text("• ${factor.description}", color = Color.LightGray, fontSize = 11.sp)
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                val groqResp = interaction?.groqResponse
-                if (groqResp != null) {
-                    Text("AI Semantic Threat Intelligence (Groq):", color = Color(0xFF00E5FF), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("• Category: ${groqResp.scamCategory.replace("_", " ")} (${groqResp.confidence} confidence)", color = Color.White, fontSize = 11.sp)
-                    if (groqResp.psychologicalTriggers.isNotEmpty()) {
-                        Text("• Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}", color = Color.LightGray, fontSize = 11.sp)
-                    }
-                    if (groqResp.summaryReasoning.isNotBlank()) {
-                        Text("• ${groqResp.summaryReasoning}", color = Color.LightGray, fontSize = 11.sp, maxLines = 2)
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                val whatTrustMeshDid = if (riskLevel == RiskLevel.CRITICAL) {
-                    "Monitored call context and recommended full security intervention."
-                } else {
-                    "Monitored call interaction locally and verified caller reputation."
-                }
-                Text("Action Taken:", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(whatTrustMeshDid, color = Color.LightGray, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(12.dp))
-
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "🛡 Zero call audio was recorded or processed locally or externally.",
-                    color = Color(0xFF34A853),
-                    fontSize = 11.sp,
+                    text = "TriNetra Call Summary",
+                    color = Color(0xFF0F172A),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val callerIdentity = interaction?.callerIdentity
+            val displayName = callerIdentity?.displayName ?: "Unknown Name"
+            val phoneNumber = callerIdentity?.phoneNumber ?: interaction?.title ?: "Not available"
+
+            Text("Caller:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(displayName, color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(phoneNumber, color = Color(0xFF64748B), fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val dateTime = interaction?.timestamp ?: "Not available"
+            Text("Date / Time:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(dateTime, color = Color(0xFF0F172A), fontSize = 13.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val durationText = if (activeCallDurationSeconds > 0) "$activeCallDurationSeconds seconds" else "Not available"
+            Text("Call Duration:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(durationText, color = Color(0xFF0F172A), fontSize = 13.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val riskLevel = interaction?.riskLevel ?: RiskLevel.LOW
+            val score = interaction?.riskAssessment?.score ?: 0
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Risk Level:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = riskLevel.displayName,
+                        color = when (riskLevel) {
+                            RiskLevel.CRITICAL, RiskLevel.HIGH -> Color(0xFFDC2626)
+                            RiskLevel.ELEVATED -> Color(0xFFD97706)
+                            RiskLevel.LOW -> Color(0xFF1B8A5A)
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Risk Score:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("$score / 100", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            RealtimeRiskGraph(
+                currentScore = score,
+                riskAssessment = interaction?.riskAssessment
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val rep = interaction?.callerReputation
+            if (rep != null && rep.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
+                Text("Reputation:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "${rep.reputationLevel.name.replace("_", " ")} (${rep.source})",
+                    color = if (rep.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) Color(0xFFDC2626) else Color(0xFFD97706),
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+            }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            if (activeIncident != null) {
+                Text("Security Incident:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "${activeIncident.incidentType.name.replace("_", " ")} [${activeIncident.severity}]",
+                    color = Color(0xFFDC2626),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            val explanation = interaction?.riskAssessment?.explanation ?: "No details available."
+            Text("Explanation:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(explanation, color = Color(0xFF0F172A), fontSize = 12.sp, maxLines = 3)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val factors = interaction?.riskAssessment?.factors ?: emptyList()
+            if (factors.isNotEmpty()) {
+                Text("Risk Factors:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                factors.take(3).forEach { factor ->
+                    Text("• ${factor.description}", color = Color(0xFF0F172A), fontSize = 11.sp)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            val groqResp = interaction?.groqResponse
+            if (groqResp != null) {
+                Text("AI Semantic Threat Intelligence (Groq):", color = Color(0xFF028090), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("• Category: ${groqResp.scamCategory.replace("_", " ")} (${groqResp.confidence} confidence)", color = Color(0xFF0F172A), fontSize = 11.sp)
+                if (groqResp.psychologicalTriggers.isNotEmpty()) {
+                    Text("• Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}", color = Color(0xFF64748B), fontSize = 11.sp)
+                }
+                if (groqResp.summaryReasoning.isNotBlank()) {
+                    Text("• ${groqResp.summaryReasoning}", color = Color(0xFF0F172A), fontSize = 11.sp, maxLines = 2)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            val whatTrustMeshDid = if (riskLevel == RiskLevel.CRITICAL) {
+                "Monitored call context and recommended full security intervention."
+            } else {
+                "Monitored call interaction locally and verified caller reputation."
+            }
+            Text("Action Taken:", color = Color(0xFF64748B), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(whatTrustMeshDid, color = Color(0xFF0F172A), fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "🛡 Zero call audio was recorded or processed locally or externally.",
+                color = Color(0xFF1B8A5A),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    contentPadding = PaddingValues(0.dp)
                 ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Close", color = Color.Gray)
-                    }
+                    Text("Close", color = Color(0xFF64748B))
+                }
 
-                    Button(
-                        onClick = {
-                            val interactionId = interaction?.id ?: ""
-                            if (interactionId.isNotBlank()) {
-                                val intent = android.content.Intent(context, MainActivity::class.java).apply {
-                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                    putExtra("navigate_to", "report/$interactionId")
-                                }
-                                context.startActivity(intent)
-                            } else {
-                                val intent = android.content.Intent(context, MainActivity::class.java).apply {
-                                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                    putExtra("navigate_to", "history")
-                                }
-                                context.startActivity(intent)
+                Button(
+                    onClick = {
+                        val interactionId = interaction?.id ?: ""
+                        if (interactionId.isNotBlank()) {
+                            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                putExtra("navigate_to", "report/$interactionId")
                             }
-                            onDismiss()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        Text("View Report", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+                            context.startActivity(intent)
+                        } else {
+                            val intent = android.content.Intent(context, MainActivity::class.java).apply {
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                putExtra("navigate_to", "history")
+                            }
+                            context.startActivity(intent)
+                        }
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF028090)),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    Text("View Report", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             }
         }
@@ -718,51 +1091,60 @@ fun CompactFloatingOverlay(
     activeIncident: com.trustmesh.app.core.incident.SecurityIncident?,
     onDismiss: () -> Unit
 ) {
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A).copy(alpha = 0.96f),
-            Color(0xFF1E1E38).copy(alpha = 0.96f)
-        )
-    )
+    val finalCustomVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, null)
+    val isGenuine = finalCustomVoice?.first == "Normal User Voice Matched"
+    val isCloned = finalCustomVoice?.first == "⚠️ Likely Cloned Voice"
+    
+    val effectiveRiskLevel = when {
+        isGenuine -> RiskLevel.LOW
+        isCloned -> RiskLevel.CRITICAL
+        else -> riskLevel
+    }
+
+    val themeColor = when (effectiveRiskLevel) {
+        RiskLevel.CRITICAL -> Color(0xFFDC2626)
+        RiskLevel.HIGH -> Color(0xFFDC2626)
+        RiskLevel.ELEVATED -> Color(0xFFD97706)
+        RiskLevel.LOW -> Color(0xFF1B8A5A)
+    }
 
     Surface(
         modifier = Modifier.padding(16.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = Color.Transparent,
-        border = BorderStroke(width = 1.5.dp, color = Color(0xFF00E5FF)),
-        shadowElevation = 10.dp
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFFAF8F5),
+        border = BorderStroke(width = 1.5.dp, color = themeColor),
+        shadowElevation = 8.dp
     ) {
-        Box(modifier = Modifier.background(brush = overlayGradient)) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "🛡 TriNetra Call Security",
+                    color = Color(0xFF028090),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val title = finalCustomVoice?.first ?: (if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" })
+                Text(title, color = Color(0xFF0F172A), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = effectiveRiskLevel.displayName,
+                    color = themeColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE2E8F0)),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.height(32.dp)
             ) {
-                Column {
-                    Text("🛡 TriNetra", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    if (callerIdentity?.isKnown == true) {
-                        Text(callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" }, color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Text("Known contact", color = Color.Gray, fontSize = 12.sp)
-                    } else {
-                        val title = if (fallbackName.isNotBlank()) fallbackName else "Unknown Caller"
-                        Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.Gray, fontSize = 12.sp)
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(riskLevel.displayName, color = Color(0xFF34A853), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    if (callerReputation != null && callerReputation.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
-                        val repColor = if (callerReputation.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) Color(0xFFEA4335) else Color(0xFFFBBC05)
-                        Text("Reputation: ${callerReputation.reputationLevel.name.replace("_", " ")}", color = repColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    } else if (activeIncident != null) {
-                        Text(activeIncident.incidentType.name.replace("_", " "), color = Color(0xFFEA4335), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    } else {
-                        Text(riskAssessment?.attackContext?.inferredIntent?.name?.replace("_", " ") ?: "Monitoring interaction", color = Color.Gray, fontSize = 12.sp)
-                    }
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                TextButton(onClick = onDismiss) {
-                    Text("Dismiss", color = Color.Gray)
-                }
+                Text("Dismiss", color = Color(0xFF0F172A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -780,116 +1162,20 @@ fun FloatingRiskCard(
     interaction: com.trustmesh.app.interaction.Interaction? = null,
     onDismiss: () -> Unit
 ) {
-    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = customVoice?.first == "Normal User Voice Matched"
-    val isCloned = customVoice?.first == "⚠️ Likely Cloned Voice"
-
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
-
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFEA4335)
-        RiskLevel.HIGH -> Color(0xFFEA4335)
-        RiskLevel.ELEVATED -> Color(0xFFFBBC05)
-        RiskLevel.LOW -> Color(0xFF34A853)
-    }
-
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A).copy(alpha = 0.96f),
-            Color(0xFF1E1E38).copy(alpha = 0.96f)
+    Box(modifier = Modifier.width(320.dp).padding(8.dp)) {
+        PremiumNotificationOverlayCard(
+            callerIdentity = callerIdentity,
+            callerReputation = callerReputation,
+            fallbackName = fallbackName,
+            fallbackNumber = fallbackNumber,
+            riskLevel = riskLevel,
+            riskAssessment = riskAssessment,
+            activeIncident = activeIncident,
+            interaction = interaction,
+            onDismiss = onDismiss,
+            onCollapse = null,
+            customVoice = null
         )
-    )
-
-    Surface(
-        modifier = Modifier
-            .padding(16.dp)
-            .width(310.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.Transparent,
-        border = BorderStroke(width = 1.5.dp, color = themeColor),
-        shadowElevation = 14.dp
-    ) {
-        Box(modifier = Modifier.background(brush = overlayGradient)) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("TriNetra Protection", color = themeColor, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                val title = customVoice?.first ?: (if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" })
-                Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                if (callerIdentity?.isKnown != true && customVoice == null) {
-                    Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.LightGray, fontSize = 14.sp)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Risk Level: ${effectiveRiskLevel.displayName}", color = themeColor, fontWeight = FontWeight.Bold)
-
-                if (callerReputation != null && callerReputation.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Directory: ${callerReputation.displayName ?: callerReputation.category.name}", color = Color.LightGray, fontSize = 14.sp)
-                    val repColor = if (callerReputation.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) Color(0xFFEA4335) else Color(0xFFFBBC05)
-                    Text(callerReputation.reputationLevel.name.replace("_", " "), color = repColor, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                val contextText = customVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Analyzing caller indicators locally...")
-                Text(contextText, color = Color.LightGray, fontSize = 14.sp)
-
-                val groqResp = interaction?.groqResponse
-                if (groqResp != null) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = "🧠 AI Threat Insight (Groq)",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = groqResp.summaryReasoning,
-                            color = Color.White,
-                            fontSize = 12.sp
-                        )
-                        if (groqResp.psychologicalTriggers.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}",
-                                color = Color(0xFFFBBC05),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                RealtimeRiskGraph(
-                    currentScore = riskAssessment?.score ?: 0,
-                    riskAssessment = riskAssessment,
-                    interaction = interaction
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("Dismiss", color = Color.Gray) }
-                }
-            }
-        }
     }
 }
 
@@ -916,124 +1202,37 @@ fun BottomRiskSheet(
     }
 
     val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFEA4335)
-        RiskLevel.HIGH -> Color(0xFFEA4335)
-        RiskLevel.ELEVATED -> Color(0xFFFBBC05)
-        RiskLevel.LOW -> Color(0xFF34A853)
+        RiskLevel.CRITICAL -> Color(0xFFDC2626)
+        RiskLevel.HIGH -> Color(0xFFDC2626)
+        RiskLevel.ELEVATED -> Color(0xFFD97706)
+        RiskLevel.LOW -> Color(0xFF1B8A5A)
     }
-
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A).copy(alpha = 0.98f),
-            Color(0xFF1E1E38).copy(alpha = 0.98f)
-        )
-    )
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        color = Color.Transparent,
+        color = Color(0xFFFAF8F5),
         shadowElevation = 16.dp,
         border = BorderStroke(width = 1.5.dp, color = themeColor)
     ) {
-        Box(modifier = Modifier.background(brush = overlayGradient)) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("TriNetra Protection", color = themeColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(effectiveRiskLevel.displayName, color = themeColor, fontWeight = FontWeight.Black, fontSize = 22.sp)
-                Spacer(modifier = Modifier.height(16.dp))
-                val title = customVoice?.first ?: (if (callerIdentity?.isKnown == true) callerIdentity.displayName ?: fallbackName.ifBlank { "Unknown" } else fallbackName.ifBlank { "Unknown Caller" })
-                Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                if (callerIdentity?.isKnown != true && customVoice == null) {
-                    Text(callerIdentity?.phoneNumber ?: fallbackNumber, color = Color.LightGray, fontSize = 16.sp)
-                }
-
-                if (callerReputation != null && callerReputation.reputationLevel != com.trustmesh.app.core.identity.ReputationLevel.UNKNOWN) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val repColor = if (callerReputation.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) Color(0xFFEA4335) else Color(0xFFFBBC05)
-                    Text("⚠ ${callerReputation.reputationLevel.name.replace("_", " ")}", color = repColor, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("External Directory: ${callerReputation.displayName ?: callerReputation.category.name}", color = Color.LightGray, fontSize = 14.sp)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                if (activeIncident != null) {
-                    Text(
-                        text = "CRITICAL SECURITY INCIDENT\n${activeIncident.incidentType.name.replace("_", " ")}",
-                        color = Color(0xFFEA4335),
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                Text(
-                    text = customVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "Multiple suspicious signals detected."),
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-
-                val groqResp = interaction?.groqResponse
-                if (groqResp != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Text(
-                            text = "🧠 AI Threat Insight (Groq)",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = groqResp.summaryReasoning,
-                            color = Color.White,
-                            fontSize = 13.sp
-                        )
-                        if (groqResp.psychologicalTriggers.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}",
-                                color = Color(0xFFFBBC05),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-                RealtimeRiskGraph(
-                    currentScore = riskAssessment?.score ?: 0,
-                    riskAssessment = riskAssessment,
-                    interaction = interaction
-                )
-
-                if (activeIncident != null && activeIncident.recommendedActions.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Recommended:", color = Color.Gray, fontWeight = FontWeight.Bold)
-                    activeIncident.recommendedActions.forEach { action ->
-                        Text(action, color = Color.LightGray, fontSize = 14.sp, textAlign = TextAlign.Center)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-                TextButton(onClick = onDismiss) {
-                    Text("Dismiss", color = Color.Gray)
-                }
-            }
+        Column(
+            modifier = Modifier
+                .padding(18.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PremiumNotificationOverlayCard(
+                callerIdentity = callerIdentity,
+                callerReputation = callerReputation,
+                fallbackName = fallbackName,
+                fallbackNumber = fallbackNumber,
+                riskLevel = riskLevel,
+                riskAssessment = riskAssessment,
+                activeIncident = activeIncident,
+                interaction = interaction,
+                onDismiss = onDismiss,
+                onCollapse = null,
+                customVoice = customVoice
+            )
         }
     }
 }
@@ -1050,143 +1249,27 @@ fun FullScreenSecurityOverlay(
     interaction: com.trustmesh.app.interaction.Interaction? = null,
     onDismiss: () -> Unit
 ) {
-    val customVoice = getCustomVoiceMatchInfo(callerIdentity, fallbackName, fallbackNumber, interaction)
-    val isGenuine = customVoice?.first == "Normal User Voice Matched"
-    val isCloned = customVoice?.first == "⚠️ Likely Cloned Voice"
-
-    val effectiveRiskLevel = when {
-        isGenuine -> RiskLevel.LOW
-        isCloned -> RiskLevel.CRITICAL
-        else -> riskLevel
-    }
-
-    val themeColor = when (effectiveRiskLevel) {
-        RiskLevel.CRITICAL -> Color(0xFFEA4335)
-        RiskLevel.HIGH -> Color(0xFFEA4335)
-        RiskLevel.ELEVATED -> Color(0xFFFBBC05)
-        RiskLevel.LOW -> Color(0xFF34A853)
-    }
-
-    val overlayGradient = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF0F172A),
-            Color(0xFF1E1E38),
-            Color(0xFF0B0D10)
-        )
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(brush = overlayGradient)
-            .padding(28.dp),
+            .background(Color(0xFF0F172A).copy(alpha = 0.6f))
+            .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = painterResource(id = com.trustmesh.app.R.drawable.ic_trinetra_orbit_eye),
-                contentDescription = null,
-                modifier = Modifier.size(54.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("TRINETRA SECURITY ALERT", color = themeColor, fontSize = 24.sp, fontWeight = FontWeight.Black)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(effectiveRiskLevel.displayName, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            RealtimeRiskGraph(
-                currentScore = riskAssessment?.score ?: 95,
+        Box(modifier = Modifier.width(340.dp)) {
+            PremiumNotificationOverlayCard(
+                callerIdentity = callerIdentity,
+                callerReputation = callerReputation,
+                fallbackName = fallbackName,
+                fallbackNumber = fallbackNumber,
+                riskLevel = riskLevel,
                 riskAssessment = riskAssessment,
-                interaction = interaction
+                activeIncident = activeIncident,
+                interaction = interaction,
+                onDismiss = onDismiss,
+                onCollapse = null,
+                customVoice = null
             )
-
-            val groqResp = interaction?.groqResponse
-            if (groqResp != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF1E293B).copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                        .padding(12.dp)
-                ) {
-                    Text(
-                        text = "🧠 AI Threat Insight (Groq)",
-                        color = Color(0xFF00E5FF),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = groqResp.summaryReasoning,
-                        color = Color.White,
-                        fontSize = 13.sp
-                    )
-                    if (groqResp.psychologicalTriggers.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Triggers: ${groqResp.psychologicalTriggers.joinToString(", ")}",
-                            color = Color(0xFFFBBC05),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            if (activeIncident != null) {
-                Text(
-                    text = activeIncident.incidentType.name.replace("_", " "),
-                    color = Color(0xFFEA4335),
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    fontSize = 18.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            Text(
-                text = customVoice?.second ?: (activeIncident?.explanation ?: riskAssessment?.attackContext?.explanation ?: riskAssessment?.explanation ?: "This interaction has multiple strong indicators of potential fraud or abuse."),
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                fontSize = 15.sp
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Active call cannot be retroactively blocked by CallScreeningService.",
-                color = Color(0xFFFBBC05), // yellow warning
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            if (activeIncident != null && activeIncident.recommendedActions.isNotEmpty()) {
-                Text("Recommended:", color = Color.Gray, fontWeight = FontWeight.Bold)
-                activeIncident.recommendedActions.forEach { action ->
-                    Text("• $action", color = Color.LightGray, fontSize = 15.sp, textAlign = TextAlign.Center)
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            HorizontalDivider(color = Color.DarkGray)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Evidence", color = Color.Gray, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
-            Spacer(modifier = Modifier.height(8.dp))
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val evidenceList = riskAssessment?.evidence ?: listOf("Incoming call")
-                for (ev in evidenceList.take(4)) {
-                    Text("• $ev", color = Color.LightGray)
-                }
-
-                if (callerReputation != null && callerReputation.reputationLevel == com.trustmesh.app.core.identity.ReputationLevel.HIGH_RISK) {
-                    Text("• External source reports HIGH RISK", color = Color(0xFFEA4335), fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = Color.DarkGray)
-            Spacer(modifier = Modifier.height(24.dp))
-            TextButton(onClick = onDismiss) {
-                Text("Dismiss Alert", color = Color.Gray, fontSize = 16.sp)
-            }
         }
     }
 }
