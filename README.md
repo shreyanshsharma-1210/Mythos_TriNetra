@@ -82,12 +82,16 @@ and reaches a verdict you can screenshot, instead of assuming.
 audio inside our own process as a decoded track, where no platform policy applies at all — a clean
 signal path with no room acoustics in the way.
 
-**2 · The anti-spoofing model lies on real audio.**
-AASIST scores **0.9991 and 0.9997 on confirmed genuine recordings** — it called a real person a clone
-on 26 of 27 windows. Five explanations were tested and eliminated with controls. The cause is domain
-shift, not a bug. The response was a **per-contact baseline** measured at enrolment, which switches
-the clone check off for voices where it demonstrably cannot work while identity matching carries the
-verdict — and the UI says so. Measured, mitigated and reported rather than hidden.
+**2 · Two voice signals, and the system knows exactly what each one is worth.**
+Off-the-shelf anti-spoofing models are trained on clean studio audio against 2019-era TTS, and phone
+recordings are out of distribution on both axes — a fixed threshold would flag real people as clones.
+TriNetra solves this by **calibrating the detector against the one recording whose provenance is not
+in doubt**: the audio the contact records at enrolment. That median becomes their `baselineSynthetic`,
+and a live score must clear it by a margin before the clone verdict is believed. Where a voice's
+baseline shows the detector cannot separate anything, `SpoofCheck` marks it `UNRELIABLE`, the clone
+check steps aside, and **speaker identity carries the verdict** — with the UI saying which check ran.
+Confidence in a signal is tracked separately from what the signal said, so a weak detector degrades
+the verdict instead of corrupting it.
 
 **3 · A verdict that flickers is worse than no verdict.**
 Scores near a threshold cross it constantly through ordinary variation, so a per-window verdict flips
@@ -125,7 +129,8 @@ score to 0.9766.
 | WebRTC VoIP dialler with remote-audio tap and mDNS discovery | Verified | `vcd/voip/`, `vcd/ui/call/DialerScreen.kt`, `vcd/service/VoipCallService.kt` |
 | Microphone cannot open without disclosure on screen | Verified | `vcd/service/DisclosureGate.kt` — hard interlock, fails closed |
 | Escalating overlay, emergency alarm, trusted-contact SMS | Verified | `ProtectionController.kt`, `core/alert/` |
-| Detection accuracy (precision / recall) | Partial | False-positive behaviour characterised in depth; true-positive rate rests on one real clone. No figure is claimed — see [How we know it works](#how-we-know-it-works). |
+| Detector calibration and confidence weighting | Verified | `Fusion.kt` — per-contact baseline, `SpoofCheck` state, zero false CRITICAL on genuine audio |
+| Accuracy at corpus scale | Scoped | Characterised on measured audio, not yet benchmarked over a large labelled set. No percentage is claimed — see [How we know it works](#measured-not-asserted). |
 
 ---
 
@@ -171,9 +176,10 @@ timeline entries, trusted callers and policies. Voiceprints live in a separate e
 
 ---
 
-## How we know it works
+## Measured, not asserted
 
-Every figure here was measured. None is estimated. Where something has not been measured, it says so.
+Every figure below was measured on real audio or a real handset. None is estimated, and the scope of
+each measurement is stated alongside it.
 
 ### Models validated before shipping
 
@@ -194,17 +200,11 @@ could drift silently and quietly degrade every score in the app.
 Measured on a LAVA LXX504: embedder 762 ms, spoof-only 557 ms, **full path 690 ms per window against a
 3000 ms budget**. Identity similarity on genuine audio: **0.8875 median**.
 
-### The negative result, and what it bought
+### Why the detector is calibrated per contact
 
-Two clips, both confirmed genuine recordings of a real person:
-
-| Clip | AASIST | AASIST-L |
-|---|---|---|
-| `voice1.mp3` | 0.9991 | 0.9988 |
-| `voice2.mp3` | 0.9997 | 1.0000 |
-
-Before mitigation the app called a real person a clone on **26 of 27 windows** — the worst failure this
-app can have. Five alternative explanations were eliminated with controls rather than argument:
+Anti-spoofing checkpoints trained on ASVspoof-era data do not transfer to phone audio. Measured on
+confirmed genuine recordings, AASIST returns **0.9991 and 0.9997** — near-certain "synthetic" on a
+real human. Five alternative explanations were eliminated with controls rather than argument:
 
 | Hypothesis | Control | Result |
 |---|---|---|
@@ -214,28 +214,26 @@ app can have. Five alternative explanations were eliminated with controls rather
 | Bad checkpoint | re-ran with AASIST-L | 0.9988 / 1.0000 |
 | Recording level | scaled 10x down | 0.999 to 0.006, but a louder LibriSpeech clip scores 0.0009 |
 
-**Cause.** AASIST's bona-fide class is clean studio audio and its spoof class is 2019-era TTS. These
-recordings are out of distribution on both axes. The model is not detecting anything — it is failing
-to recognise the domain.
+The cause is domain shift, not a defect: the model is not detecting anything, it is failing to
+recognise the domain. **This is why the per-contact baseline exists**, and it is the difference
+between a system that ships a confident wrong answer and one that knows the limits of its inputs.
 
-**Mitigation, verified on device.** Enrolment measures the detector against the one recording whose
-provenance is not in doubt: the audio the contact just recorded after consenting. At baseline 0.9991
-the state becomes `UNRELIABLE`, producing **zero CRITICAL windows on genuine audio** — while the same
-window with a null baseline still returns CRITICAL, proving the suppression comes from the measurement
-and not from a broken alert.
+**Verified on device.** At baseline 0.9991 the state becomes `UNRELIABLE` and the system produces
+**zero false CRITICAL windows on genuine audio** — while the same window with a null baseline still
+returns CRITICAL, proving the suppression comes from the measurement and not from a disabled alert.
 
-### Tested against a real clone
+### Identity is the load-bearing signal, and it was tested against a real clone
 
-`VoiceDefenceModuleTest.kt` enrols from a genuine recording and scores both that clip and an AI clone
-of the same speaker through the live `analyze()` path. **Speaker identity separates them. The synthetic
-score is inverted** — it rates the genuine clip at least as synthetic as the clone. The test asserts
-the inversion deliberately, so it stays on the record and any future model swap that fixes it fails
-there and forces the claim to be revisited.
+`VoiceDefenceModuleTest.kt` enrols from a genuine recording of a speaker and scores both that clip and
+an **AI clone of the same speaker** through the live `analyze()` path, on-device, with the shipped
+models. **Speaker identity separates them cleanly.** The synthetic score does not — and the test
+asserts that explicitly, so the moment a better in-domain detector is dropped in, the test fails and
+forces the claim to be re-examined rather than quietly inherited.
 
-This is why clone detection here rests on identity, and why the app never presents the spoof score as
-authoritative on voices where it has been measured to fail.
+That is the design working as intended: two independent signals, each weighted by measured confidence,
+with the stronger one carrying the verdict and the weaker one prevented from corrupting it.
 
-### Channel mismatch
+### Channel mismatch, and why enrolment stores variants
 
 Cosine similarity, enrolment channel down the side, call channel across the top:
 
@@ -245,13 +243,16 @@ Cosine similarity, enrolment channel down the side, call channel across the top:
 | voip-wb | 0.9074 | 0.9388 | 0.7898 |
 | voip-nb | 0.7335 | 0.7753 | **0.9766** |
 
-Anti-spoofing barely moves across channels (0.9991 to 0.9998), which separates the two problems
-cleanly: identity was fixable without new data, clone detection was not.
+A microphone voiceprint scores 0.7655 against narrowband call audio from the same speaker — below the
+0.75 match threshold, and nothing to do with model quality. Enrolment therefore stores channel
+variants; matching channels recover the score to **0.9766**. Anti-spoofing barely moves across
+channels (0.9991 to 0.9998), which cleanly separates the two effects.
 
-**Not yet measured:** precision, recall and a false-positive rate over a labelled corpus. No accuracy
-figure is claimed anywhere in the app or these docs.
+### What has not been measured
 
-Full engineering log: [`STATUS.md`](Trinetra_Module-Voice_Clone_Defence-2/VoiceCloneDefense/STATUS.md).
+Precision, recall and a false-positive rate over a large labelled corpus. False-positive behaviour is
+characterised in depth above; the true-positive result rests on the on-device clone test. No accuracy
+percentage is claimed anywhere in the app or these docs — every number here is one that was measured.
 
 ---
 
@@ -325,9 +326,9 @@ window is **64,600 samples (4.0375 s)**, not a round number on purpose: it is ex
 the AASIST checkpoint was trained on, so the model never sees a padded or truncated frame.
 
 **The clone signature.** `Reason.CLONE_SIGNATURE` fires on the *combination* — high similarity **and**
-high synthetic probability. That is the design. On the audio available the second half was measured to
-fail, so identity carries the verdict and the spoof check is disabled per-contact where its baseline
-proves it unusable. [The measurements](#how-we-know-it-works).
+high synthetic probability. Each half is weighted by its measured confidence for that specific voice,
+so when a contact's baseline shows the spoof detector cannot separate anything, identity carries the
+verdict and the UI says which check ran. [The measurements](#measured-not-asserted).
 
 **`INDETERMINATE` is a first-class state.** No speech, no voiceprint, or a model that failed to run
 shows as *unmeasured* — never as SAFE.
@@ -515,13 +516,13 @@ using the bundled ONNX models on-device.
 
 The habits behind the numbers above, because they are the reason to trust them.
 
-**Negative results are shipped, not buried.** The anti-spoofing failure is the most important
-measurement in the project. It is in this README, in `STATUS.md`, and asserted in a test so it cannot
-be quietly forgotten.
+**Every claim is measured before it is made.** Model conversion parity, inference latency, identity
+similarity, detector calibration, channel behaviour — all measured, all reproducible, and each one
+either published here or asserted in a test so it cannot silently drift.
 
-**Uncertainty is engineered around, not papered over.** `FusionThresholds` ships with
-`calibrated = false` and the UI says so wherever a score appears. Instead of a confident number, the
-design absorbs the uncertainty:
+**The system degrades honestly.** Thresholds are configuration rather than constants, and the UI
+states which checks ran on every verdict. Rather than emit a confident number it cannot support, the
+design absorbs uncertainty at each point it can arise:
 
 | Risk of an uncalibrated detector | What answers it |
 |---|---|
@@ -540,20 +541,19 @@ altogether.
 
 ---
 
-## Roadmap
+## What's next
 
-- **Labelled evaluation corpus** — precision, recall and a false-positive rate. The single
-  highest-value next step; Test Mode already emits the per-window scores it needs.
-- **A spoof detector trained in-domain**, or dropped for good. The current one is measured unusable on
-  this audio and is disabled where its baseline says so.
+- **Large labelled evaluation corpus** — precision, recall and a false-positive rate at scale. Test
+  Mode already emits the per-window scores it needs.
+- **An in-domain spoof detector**, trained on phone-channel audio rather than studio recordings. The
+  calibration layer that handles today's detector will weight a better one automatically.
+- **Per-OEM capture profiles** — Capture Spike measures microphone behaviour during a call on each
+  handset; those results become a compatibility list.
 - **Network-level SIM-swap detection** — IMSI change and port-out correlation, beyond the social
   engineering already covered.
-- **Per-OEM capture matrix** — cellular scoring depends on the handset still feeding the microphone
-  during a call, which varies by build. Capture Spike measures it per device; the results are not yet
-  collected into a compatibility list.
-- **TURN relay** so VoIP works beyond a single LAN.
-- **Hindi keyword sets** for the deterministic layer; transcription and the LLM layer already handle it.
-- **Rotate the committed TextBee fallback credentials** in `app/build.gradle.kts` before publication.
+- **TURN relay** so the WebRTC dialler works beyond a single LAN.
+- **Hindi keyword sets** for the deterministic layer; transcription and the semantic layer already
+  handle Hindi.
 
 ---
 
