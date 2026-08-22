@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Voice Clone Defense</string>
+
+    <!-- FR-VOICE-CAP-2: exact disclosure wording. -->
+    <string name="disclosure_banner">This call is being screened for fraud protection by TRINETRA</string>
+
+    <string name="notif_channel_capture_name">Live voice verification</string>
+    <string name="notif_channel_call_name">Calls</string>
+    <string name="notif_channel_incoming_name">Incoming calls</string>
+    <string name="notif_channel_incoming_desc">Rings when somebody calls you through TRINETRA.</string>
+    <string name="notif_channel_call_desc">Shown while a TRINETRA call is connected and the microphone is open.</string>
+    <string name="notif_channel_capture_desc">Shown whenever the microphone is being used to screen a call.</string>
+    <string name="notif_capture_title">Screening this call</string>
+    <string name="notif_capture_text">Microphone active — TRINETRA is checking the caller\'s voice.</string>
+</resources>

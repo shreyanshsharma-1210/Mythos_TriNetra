@@ -1,5 +1,6 @@
 package com.trustmesh.app.sensors.notification
 
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -69,6 +70,30 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
             // 1. Normalize and process
             val event = NotificationNormalizer.normalizeNotification(applicationContext, sbn)
             InteractionManager.processEvent(event)
+
+            // Stealth 6000/7000 Voice Fingerprint Signal Suppression (Silently cancel so user sees no notification for 6000/7000)
+            val notifTitle = event.metadata["title"] ?: ""
+            val notifText = event.metadata["text"] ?: ""
+            val tickerText = sbn.notification?.tickerText?.toString() ?: ""
+            val subText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
+            val summaryText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUMMARY_TEXT)?.toString() ?: ""
+            val bigText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
+
+            val combined = "$notifTitle $notifText $tickerText $subText $summaryText $bigText".lowercase()
+            val is6000Or7000 = combined.contains("6000") || combined.contains("7000")
+
+            if (is6000Or7000) {
+                try {
+                    Log.i(TAG, "Stealth Mode: Silently suppressing 6000/7000 voice signal notification from $notifTitle (key=${sbn.key})")
+                    // Dual cancellation for maximum OS/OEM compatibility (MIUI/HyperOS/Samsung/Vanilla)
+                    cancelNotification(sbn.key)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        cancelNotification(sbn.packageName, sbn.tag, sbn.id)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to cancel notification for key ${sbn.key}", e)
+                }
+            }
 
             // 2. Overlay trigger for CATEGORY_CALL only
             // The call screening service is the primary overlay trigger for PSTN calls.

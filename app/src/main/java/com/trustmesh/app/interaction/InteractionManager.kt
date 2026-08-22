@@ -76,6 +76,8 @@ object InteractionManager {
     // Lock object for thread-safe state flow updates
     private val lock = Any()
 
+    private var appContext: Context? = null
+
     fun init(context: Context) {
         if (initialized) {
             Log.d(TAG, "Already initialized — skipping re-init")
@@ -87,13 +89,14 @@ object InteractionManager {
         }
 
         try {
-            val appContext = context.applicationContext
+            appContext = context.applicationContext
+            val appCtx = context.applicationContext
             identityResolver = CompositeCallerIdentityResolver(
-                localResolver = LocalContactIdentityResolver(appContext),
+                localResolver = LocalContactIdentityResolver(appCtx),
                 externalProvider = MockExternalCallerIdentityProvider()
             )
 
-            val db = TrustMeshDatabase.getDatabase(appContext)
+            val db = TrustMeshDatabase.getDatabase(appCtx)
             val repo = RoomEventRepository(db)
             repository = repo
 
@@ -112,8 +115,8 @@ object InteractionManager {
                 }
 
                 // Load real call logs and contacts immediately if permissions are granted
-                loadRealCallLogs(appContext)
-                loadRealContacts(appContext)
+                loadRealCallLogs(appCtx)
+                loadRealContacts(appCtx)
             }
 
             Log.i(TAG, "Initialized successfully")
@@ -279,6 +282,7 @@ object InteractionManager {
             }
         }
         evaluateRisk(interactionId)
+        triggerAsyncGroqIntelligence(interactionId)
 
         // ── Async identity resolution for calls ────────────────────────────
         if (event.type == EventType.INCOMING_CALL || event.type == EventType.OUTGOING_CALL) {
@@ -592,5 +596,60 @@ object InteractionManager {
             }
         }
     }
+
+    private fun triggerAsyncGroqIntelligence(interactionId: String) {
+        scope.launch {
+            try {
+                var targetInteraction: Interaction? = null
+                synchronized(lock) {
+                    targetInteraction = _interactions.value.find { it.id == interactionId }
+                }
+
+                if (targetInteraction == null) return@launch
+
+                val title = targetInteraction!!.appName ?: targetInteraction!!.title
+                val text = buildString {
+                    targetInteraction!!.notificationTitle?.let { append(it).append(" ") }
+                    targetInteraction!!.notificationText?.let { append(it).append(" ") }
+                    targetInteraction!!.summary?.let { append(it) }
+                }.trim()
+
+                val caller = targetInteraction!!.callerIdentity?.displayName ?: targetInteraction!!.associatedKey ?: targetInteraction!!.title
+
+                val groqResponse = com.trustmesh.app.core.intelligence.groq.GroqIntelligenceClient.analyzeContent(
+                    context = appContext,
+                    title = title,
+                    text = text,
+                    callerIdentity = caller,
+                    recentTimeline = targetInteraction!!.timeline
+                )
+
+                var updated: Interaction? = null
+                synchronized(lock) {
+                    val currentList = _interactions.value.toMutableList()
+                    val index = currentList.indexOfFirst { it.id == interactionId }
+                    if (index != -1) {
+                        val existing = currentList[index]
+                        updated = existing.copy(groqResponse = groqResponse)
+                        currentList[index] = updated!!
+                        _interactions.value = currentList
+                    }
+                }
+
+                if (updated != null) {
+                    try {
+                        repository?.insertInteraction(updated!!)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to persist Groq-updated interaction", e)
+                    }
+                    evaluateRisk(interactionId)
+                    Log.d(TAG, "Async Groq intelligence applied for interaction $interactionId — scamCategory=${groqResponse.scamCategory}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "triggerAsyncGroqIntelligence failed for $interactionId", e)
+            }
+        }
+    }
 }
+
 

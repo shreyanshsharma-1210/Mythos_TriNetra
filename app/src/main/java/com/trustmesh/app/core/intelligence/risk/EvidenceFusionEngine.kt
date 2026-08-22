@@ -190,6 +190,14 @@ object EvidenceFusionEngine {
             }
         }
         
+        // 5. Groq Semantic AI Intelligence Integration
+        val groqResp = interaction.groqResponse
+        if (groqResp != null) {
+            val groqFactors = com.trustmesh.app.core.intelligence.groq.GroqSemanticAnalyzer.analyze(groqResp)
+            factors.addAll(groqFactors)
+        }
+
         return factors
     }
 }
+
