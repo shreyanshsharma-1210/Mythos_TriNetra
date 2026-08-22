@@ -66,7 +66,8 @@ data class ActivityItem(
 @Composable
 fun HomeScreen(
     onInteractionClick: (String) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onSecurityInsightsClick: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableStateOf("home") }
     var isAskTrinetraOpen by remember { mutableStateOf(false) }
@@ -142,7 +143,6 @@ fun HomeScreen(
                             state = effectiveState,
                             onInteractionClick = onInteractionClick,
                             onStateCycle = {
-                                // Cycle override state for demo purposes: CLEAR -> CHECK -> PROTECT -> clear override
                                 manualStateOverride = when (manualStateOverride) {
                                     null, DashboardState.CLEAR -> DashboardState.CHECK
                                     DashboardState.CHECK -> DashboardState.PROTECT
@@ -153,9 +153,6 @@ fun HomeScreen(
                     }
                     "calls" -> {
                         CallsTabContent(onInteractionClick = onInteractionClick)
-                    }
-                    "insights" -> {
-                        InsightsTabContent()
                     }
                     "contacts" -> {
                         ContactsTabContent()
@@ -172,6 +169,7 @@ fun HomeScreen(
             selectedTab = selectedTab,
             onTabSelected = { selectedTab = it },
             onCenterClick = { isAskTrinetraOpen = true },
+            onInsightsClick = onSecurityInsightsClick,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
@@ -934,6 +932,7 @@ fun FloatingBottomNavigation(
     selectedTab: String,
     onTabSelected: (String) -> Unit,
     onCenterClick: () -> Unit,
+    onInsightsClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -971,10 +970,11 @@ fun FloatingBottomNavigation(
 
                 Spacer(modifier = Modifier.width(64.dp))
 
+                // Security Insights icon — tapping launches the full VCD module
                 NavItem(
                     icon = Icons.Rounded.Info,
-                    isSelected = selectedTab == "insights",
-                    onClick = { onTabSelected("insights") }
+                    isSelected = false, // VCD is a separate nav destination, not an in-page tab
+                    onClick = onInsightsClick
                 )
 
                 NavItem(
