@@ -164,6 +164,8 @@ object ProtectionController {
 
         if (initialState == CallOverlayState.INCOMING || initialState == CallOverlayState.ACTIVE) {
             hasShownSummary = false
+            activeCallDurationSeconds = 0L
+            SecurityIncidentManager.dismissAllActiveIncidents()
         }
         if (initialState == CallOverlayState.SUMMARY) {
             hasShownSummary = true
@@ -210,7 +212,9 @@ object ProtectionController {
                     val incidents by SecurityIncidentManager.incidents.collectAsState()
                     val activeIncident = incidents.firstOrNull { it.status == IncidentStatus.ACTIVE }
 
-                    val currentInteraction = interactions.firstOrNull()
+                    val currentInteraction = interactions.firstOrNull {
+                        it.evidence.contains("Incoming call") || it.evidence.contains("Outgoing call") || it.appName == "Phone"
+                    } ?: interactions.firstOrNull()
                     val isIncidentRelated = activeIncident != null && (currentInteraction == null || activeIncident.relatedInteractionIds.contains(currentInteraction.id))
                     val riskLevel = if (isIncidentRelated) {
                         activeIncident!!.severity
