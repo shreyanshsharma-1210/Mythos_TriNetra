@@ -21,6 +21,8 @@
 
 ---
 
+**Hackathon** — IKIGAI 206 (built during and for the hackathon)
+**Team** — Mythos
 **Track** — GenAI
 **Problem statement** — Real-time scam and impersonation defence
 
