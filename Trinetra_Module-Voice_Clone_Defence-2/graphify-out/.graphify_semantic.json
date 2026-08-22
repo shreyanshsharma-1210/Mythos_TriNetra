@@ -1,0 +1,788 @@
+{
+  "nodes": [
+    {
+      "id": "VoiceCloneDefense",
+      "label": "Voice Clone Defense",
+      "kind": "feature",
+      "description": "Live in-call voiceprint verification and anti-spoofing module that detects synthetic/cloned speech during active calls on speakerphone.",
+      "confidence": 95,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:1-5"
+    },
+    {
+      "id": "TRINETRA",
+      "label": "TRINETRA",
+      "kind": "product",
+      "description": "Parent security product (v3.1) that includes risk pipeline, identity evidence pipeline, and action firewall system for detecting scam calls.",
+      "confidence": 95,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:7"
+    },
+    {
+      "id": "TeamMYTHOS",
+      "label": "Team MYTHOS",
+      "kind": "organization",
+      "description": "Development team responsible for Voice Clone Defense module in IKIGAI 2026 hackathon.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:6"
+    },
+    {
+      "id": "IKIGAI2026",
+      "label": "IKIGAI 2026",
+      "kind": "event",
+      "description": "Hackathon event where Voice Clone Defense module is being developed as problem IHNG6.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:6"
+    },
+    {
+      "id": "VoiceSimilarityMetric",
+      "label": "voice_similarity",
+      "kind": "metric",
+      "description": "Cosine similarity score between live speaker embedding and enrolled voiceprint, measuring how closely the voice matches the trusted contact.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:165-167"
+    },
+    {
+      "id": "SyntheticProbability",
+      "label": "synthetic_probability",
+      "kind": "metric",
+      "description": "Statistical likelihood that audio is AI-generated or synthetically cloned, independent of similarity score. Output from anti-spoofing model.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:165-167"
+    },
+    {
+      "id": "SpeakerEmbeddingModel",
+      "label": "Speaker Embedding Model",
+      "kind": "ml_model",
+      "description": "Model that converts voice audio into a fixed-length vector (voiceprint) for comparison. Options: Resemblyzer or ECAPA-TDNN (SpeechBrain spkrec-ecapa-voxceleb).",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:161-162, 179"
+    },
+    {
+      "id": "AntiSpoofingModel",
+      "label": "Anti-Spoofing Model",
+      "kind": "ml_model",
+      "description": "Model trained on ASVspoof dataset to detect synthetic/cloned speech. Options: AASIST or RawNet2, both ASVspoof 2019/2021 LA-trained.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:162, 180"
+    },
+    {
+      "id": "Resemblyzer",
+      "label": "Resemblyzer",
+      "kind": "tool",
+      "description": "Open-source voice encoder model (GE2E-based) for speaker embedding. Recommended for quick setup in hackathon context.",
+      "confidence": 80,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:179, VoiceCloneDefense/README.md:84"
+    },
+    {
+      "id": "ECAPATCHDNN",
+      "label": "ECAPA-TDNN",
+      "kind": "tool",
+      "description": "Robust speaker embedding model from SpeechBrain (spkrec-ecapa-voxceleb) trained on VoxCeleb. Higher accuracy alternative to Resemblyzer.",
+      "confidence": 80,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:179"
+    },
+    {
+      "id": "AASIST",
+      "label": "AASIST",
+      "kind": "tool",
+      "description": "Anti-spoofing model from clovaai trained on ASVspoof 2019 LA dataset for detecting synthetic speech.",
+      "confidence": 80,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:180, VoiceCloneDefense/README.md:84"
+    },
+    {
+      "id": "RawNet2",
+      "label": "RawNet2",
+      "kind": "tool",
+      "description": "Alternative anti-spoofing model trained on ASVspoof dataset for synthetic speech detection.",
+      "confidence": 75,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:180"
+    },
+    {
+      "id": "TensorFlowLite",
+      "label": "TensorFlow Lite",
+      "kind": "technology",
+      "description": "On-device inference runtime for running quantized ML models (int8) on Android with low latency.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:181"
+    },
+    {
+      "id": "ONNX",
+      "label": "ONNX",
+      "kind": "format",
+      "description": "Open Neural Network Exchange format used as intermediate representation during model conversion from PyTorch to TensorFlow Lite.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:189"
+    },
+    {
+      "id": "PyTorch",
+      "label": "PyTorch",
+      "kind": "technology",
+      "description": "Deep learning framework. Source format for speaker embedding and anti-spoofing model checkpoints.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:186"
+    },
+    {
+      "id": "VoiceprintEnrollment",
+      "label": "Voiceprint Enrollment",
+      "kind": "process",
+      "description": "Process where a trusted contact provides 30-60 seconds of clean speech. Raw audio is discarded; only the derived embedding vector is stored encrypted at rest.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:202-210"
+    },
+    {
+      "id": "VoiceprintCrypto",
+      "label": "Voiceprint Encryption",
+      "kind": "mechanism",
+      "description": "AES-256-GCM encryption under Android Keystore non-exportable key. Ensures voiceprints are encrypted at rest and device-bound.",
+      "confidence": 85,
+      "source_location": "VoiceCloneDefense/README.md:187"
+    },
+    {
+      "id": "DisclosureBanner",
+      "label": "Disclosure Banner",
+      "kind": "ui_component",
+      "description": "Persistent on-screen notification stating 'This call is being screened for fraud protection by TRINETRA'. Must appear within 1 second of capture starting and remain visible throughout.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:154, 217-218"
+    },
+    {
+      "id": "DisclosureGate",
+      "label": "DisclosureGate",
+      "kind": "component",
+      "description": "Technical mechanism that enforces disclosure by opening a gate when the banner appears and refusing to start mic capture while the gate is closed.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:185"
+    },
+    {
+      "id": "AudioCapture",
+      "label": "Audio Capture",
+      "kind": "process",
+      "description": "Live microphone recording during active speakerphone calls using MediaRecorder or AudioRecord on MIC source. Never uses VOICE_CALL, VOICE_UPLINK, or VOICE_DOWNLINK.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:156-157"
+    },
+    {
+      "id": "MediaRecorder",
+      "label": "MediaRecorder",
+      "kind": "technology",
+      "description": "Android API for audio recording. Can capture from MIC source during speakerphone calls.",
+      "confidence": 85,
+      "source_location": "VoiceCloneDefense/README.md:14"
+    },
+    {
+      "id": "AudioRecord",
+      "label": "AudioRecord",
+      "kind": "technology",
+      "description": "Android API for raw audio recording. Used as alternative to MediaRecorder for mic capture during calls.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:146"
+    },
+    {
+      "id": "AndroidKeystore",
+      "label": "Android Keystore",
+      "kind": "technology",
+      "description": "System for managing cryptographic keys on Android devices. Provides non-exportable, device-bound keys for encryption.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:187"
+    },
+    {
+      "id": "ForegroundService",
+      "label": "Foreground Service",
+      "kind": "android_concept",
+      "description": "Android service with foregroundServiceType='microphone' declared in manifest. Required for on-device audio capture with visible notification.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:157, 218"
+    },
+    {
+      "id": "RecordAudioPermission",
+      "label": "RECORD_AUDIO Permission",
+      "kind": "permission",
+      "description": "Android permission required to capture audio from device microphone. Must be requested during onboarding, not mid-call.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:219"
+    },
+    {
+      "id": "IdentityEvidence",
+      "label": "Identity Evidence",
+      "kind": "concept",
+      "description": "Existing TRINETRA pipeline component that fuses multiple signals to assess identity authenticity. Voice verification scores feed into this as additional evidence.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:170, 229"
+    },
+    {
+      "id": "ActionFirewall",
+      "label": "Action Firewall",
+      "kind": "system",
+      "description": "Existing TRINETRA system that translates identity evidence into user-facing alerts. Uses risk levels: LOW (quiet), ELEVATED (card), HIGH (warning), CRITICAL (full-screen).",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:172, 236"
+    },
+    {
+      "id": "RiskPipeline",
+      "label": "Risk Pipeline",
+      "kind": "system",
+      "description": "Existing TRINETRA system that scores calls using metadata, behavioral signals, identity, psychology, intent, and context to determine if a call is suspicious.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:47, 149"
+    },
+    {
+      "id": "VoiceCloningTools",
+      "label": "Voice Cloning Tools",
+      "kind": "threat",
+      "description": "Third-party tools (ElevenLabs, RVC) that can produce convincing voice clones from minimal reference audio, enabling family impersonation and digital arrest scams.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:45, 133"
+    },
+    {
+      "id": "ElevenLabs",
+      "label": "ElevenLabs",
+      "kind": "tool",
+      "description": "Voice cloning service used to generate synthetic voice samples for demo testing.",
+      "confidence": 80,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:45, 133"
+    },
+    {
+      "id": "RVC",
+      "label": "RVC",
+      "kind": "tool",
+      "description": "Open-source voice conversion and cloning tool used to generate synthetic voice samples for demo testing.",
+      "confidence": 80,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:45, 133"
+    },
+    {
+      "id": "PrivacyContract",
+      "label": "Privacy Contract",
+      "kind": "concept",
+      "description": "TRINETRA's established privacy principles applied to voice data: consent-based, non-persistent raw audio, encrypted storage, visible disclosure, no external transmission, revocable consent.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:268-277"
+    },
+    {
+      "id": "VerificationPipeline",
+      "label": "Verification Pipeline",
+      "kind": "component",
+      "description": "Shared inference path that processes rolling audio windows through both speaker embedding and anti-spoofing models. Used by both live capture and test mode.",
+      "confidence": 85,
+      "source_location": "VoiceCloneDefense/README.md:201-214"
+    },
+    {
+      "id": "TestMode",
+      "label": "Test Mode",
+      "kind": "feature",
+      "description": "File-based demonstration mode that runs voice verification on pre-recorded audio clips without requiring a live call or second device.",
+      "confidence": 85,
+      "source_location": "VoiceCloneDefense/README.md:37, 50"
+    },
+    {
+      "id": "CaptureDignostics",
+      "label": "Capture Diagnostics",
+      "kind": "feature",
+      "description": "On-device testing screen that verifies whether the handset allows microphone capture during active calls using AudioManager.MODE_IN_CALL.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:47-49"
+    },
+    {
+      "id": "AudioRingBuffer",
+      "label": "AudioRingBuffer",
+      "kind": "component",
+      "description": "Memory-only ring buffer for storing rolling 3-5 second audio windows. Zeroized on stop to prevent raw audio persistence.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:186, 198"
+    },
+    {
+      "id": "LiveVerificationService",
+      "label": "LiveVerificationService",
+      "kind": "component",
+      "description": "Android foreground service (foregroundServiceType=microphone) that manages live mic capture and refuses to open microphone while disclosure gate is shut.",
+      "confidence": 85,
+      "source_location": "VoiceCloneDefense/README.md:185, 204"
+    },
+    {
+      "id": "FusionThresholds",
+      "label": "FusionThresholds",
+      "kind": "component",
+      "description": "Provisional thresholds for mapping voice_similarity and synthetic_probability scores to risk levels. Intended for calibration against demo set, not production values.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:143-145"
+    },
+    {
+      "id": "ContactRepository",
+      "label": "ContactRepository",
+      "kind": "component",
+      "description": "Database access layer for managing trusted contacts and their associated encrypted voiceprints.",
+      "confidence": 80,
+      "source_location": "VoiceCloneDefense/README.md:203, 204"
+    },
+    {
+      "id": "RoomDatabase",
+      "label": "Room Database",
+      "kind": "technology",
+      "description": "Android persistence library used for storing encrypted voiceprints and contact metadata.",
+      "confidence": 75,
+      "source_location": "VoiceCloneDefense/README.md:203"
+    },
+    {
+      "id": "ASVspoof",
+      "label": "ASVspoof",
+      "kind": "dataset",
+      "description": "Public spoofing and deepfake detection dataset (2019/2021 LA) used to train anti-spoofing models.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:180, VoiceCloneDefense/README.md:84"
+    },
+    {
+      "id": "LibriSpeech",
+      "label": "LibriSpeech",
+      "kind": "dataset",
+      "description": "Benchmark speech dataset used for conversion parity testing and model validation.",
+      "confidence": 75,
+      "source_location": "VoiceCloneDefense/README.md:127-128"
+    },
+    {
+      "id": "MelFrontend",
+      "label": "Mel Frontend",
+      "kind": "component",
+      "description": "Signal processing component that computes Mel-frequency cepstral coefficients. Implemented as conv1d inside the exported model graph for consistency.",
+      "confidence": 75,
+      "source_location": "VoiceCloneDefense/README.md:111-115"
+    },
+    {
+      "id": "SincResampler",
+      "label": "Sinc Resampler",
+      "kind": "component",
+      "description": "Audio resampling component with anti-aliasing support for normalizing different audio sample rates.",
+      "confidence": 75,
+      "source_location": "VoiceCloneDefense/README.md:198"
+    },
+    {
+      "id": "TrustedContact",
+      "label": "Trusted Contact",
+      "kind": "user_role",
+      "description": "Person who enrolls their voice in advance so their voice can be verified when they call the primary user. Must give explicit consent.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:82-83"
+    },
+    {
+      "id": "PrimaryUser",
+      "label": "Primary User",
+      "kind": "user_role",
+      "description": "Person receiving suspicious calls who uses TRINETRA to verify whether incoming calls are from trusted contacts or synthetic clones.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:82"
+    },
+    {
+      "id": "ModelConversion",
+      "label": "Model Conversion",
+      "kind": "process",
+      "description": "Pipeline to convert speaker embedding and anti-spoofing models from PyTorch → ONNX → TensorFlow → TensorFlow Lite with int8 quantization for on-device inference.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:183-192"
+    },
+    {
+      "id": "DemoProtocol",
+      "label": "Demo Protocol",
+      "kind": "process",
+      "description": "Six-step hackathon demo sequence: enroll voice → play real clip (SAFE) → play cloned clip (CRITICAL) → show full-screen alert with scores and disclosure.",
+      "confidence": 90,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:300-308"
+    },
+    {
+      "id": "Phase0Capture",
+      "label": "Phase 0: Capture Feasibility",
+      "kind": "milestone",
+      "description": "First milestone: validate that AudioRecord on MIC still returns usable audio while AudioManager is in MODE_IN_CALL on the actual demo device.",
+      "confidence": 85,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:325"
+    },
+    {
+      "id": "TelecomCompliance",
+      "label": "Telecom Compliance",
+      "kind": "requirement",
+      "description": "Adherence to telecom and privacy regulations for audio capture. On-speaker capture with visible disclosure aligns with informed consent rather than wiretap-style monitoring.",
+      "confidence": 75,
+      "source_location": "TRINETRA_Voice_Clone_Defense_PRD.md:280-281"
+    },
+    {
+      "id": "WAVFormat",
+      "label": "WAV Format",
+      "kind": "format",
+      "description": "Audio file format used in test mode for pre-recorded voice samples.",
+      "confidence": 70,
+      "source_location": "VoiceCloneDefense/README.md:198"
+    }
+  ],
+  "edges": [
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "TRINETRA",
+      "label": "is_module_of",
+      "description": "Voice Clone Defense is a new module added to TRINETRA v3.1 as Track 2 enhancement.",
+      "confidence": 95
+    },
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "TeamMYTHOS",
+      "label": "developed_by",
+      "description": "Team MYTHOS is responsible for developing and implementing Voice Clone Defense.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "IKIGAI2026",
+      "label": "submitted_to",
+      "description": "Voice Clone Defense is a hackathon submission to IKIGAI 2026 for problem ID IHNG6.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceSimilarityMetric",
+      "target_id": "SpeakerEmbeddingModel",
+      "label": "produced_by",
+      "description": "voice_similarity is computed by comparing live speaker embedding against enrolled voiceprint.",
+      "confidence": 90
+    },
+    {
+      "source_id": "SyntheticProbability",
+      "target_id": "AntiSpoofingModel",
+      "label": "produced_by",
+      "description": "synthetic_probability is the output of the anti-spoofing model detecting AI-generated speech.",
+      "confidence": 90
+    },
+    {
+      "source_id": "SpeakerEmbeddingModel",
+      "target_id": "Resemblyzer",
+      "label": "option_includes",
+      "description": "Resemblyzer is the recommended quick-setup option for speaker embedding.",
+      "confidence": 85
+    },
+    {
+      "source_id": "SpeakerEmbeddingModel",
+      "target_id": "ECAPATCHDNN",
+      "label": "option_includes",
+      "description": "ECAPA-TDNN is the higher-accuracy alternative speaker embedding model if time allows.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AntiSpoofingModel",
+      "target_id": "AASIST",
+      "label": "option_includes",
+      "description": "AASIST is a recommended anti-spoofing model trained on ASVspoof dataset.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AntiSpoofingModel",
+      "target_id": "RawNet2",
+      "label": "option_includes",
+      "description": "RawNet2 is an alternative anti-spoofing model trained on ASVspoof dataset.",
+      "confidence": 80
+    },
+    {
+      "source_id": "SpeakerEmbeddingModel",
+      "target_id": "TensorFlowLite",
+      "label": "runs_on",
+      "description": "Both speaker embedding and anti-spoofing models are deployed as quantized TFLite models for on-device inference.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AntiSpoofingModel",
+      "target_id": "TensorFlowLite",
+      "label": "runs_on",
+      "description": "Anti-spoofing model is deployed as quantized TFLite for on-device inference.",
+      "confidence": 85
+    },
+    {
+      "source_id": "ModelConversion",
+      "target_id": "PyTorch",
+      "label": "starts_from",
+      "description": "Model conversion pipeline begins with PyTorch checkpoints of speaker embedding and anti-spoofing models.",
+      "confidence": 90
+    },
+    {
+      "source_id": "ModelConversion",
+      "target_id": "ONNX",
+      "label": "converts_through",
+      "description": "PyTorch models are converted to ONNX intermediate format before TensorFlow conversion.",
+      "confidence": 90
+    },
+    {
+      "source_id": "ModelConversion",
+      "target_id": "TensorFlowLite",
+      "label": "produces",
+      "description": "Model conversion pipeline produces int8 quantized TensorFlow Lite models for on-device deployment.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceprintEnrollment",
+      "target_id": "TrustedContact",
+      "label": "requires_consent_from",
+      "description": "Trusted contact must give explicit, informed consent before their voice can be enrolled.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceprintEnrollment",
+      "target_id": "VoiceprintCrypto",
+      "label": "stores_via",
+      "description": "Enrolled voiceprint embeddings are stored encrypted using AES-256-GCM under Android Keystore key.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceprintCrypto",
+      "target_id": "AndroidKeystore",
+      "label": "uses",
+      "description": "Voiceprint encryption uses non-exportable Android Keystore keys for device-bound encryption.",
+      "confidence": 85
+    },
+    {
+      "source_id": "DisclosureBanner",
+      "target_id": "AudioCapture",
+      "label": "precedes",
+      "description": "Disclosure banner must be visible before and throughout audio capture, starting within 1 second.",
+      "confidence": 90
+    },
+    {
+      "source_id": "DisclosureGate",
+      "target_id": "LiveVerificationService",
+      "label": "controls",
+      "description": "DisclosureGate mechanically controls whether LiveVerificationService can open the microphone.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AudioCapture",
+      "target_id": "MediaRecorder",
+      "label": "uses",
+      "description": "Audio capture from microphone during calls can use MediaRecorder.AudioSource.MIC.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AudioCapture",
+      "target_id": "AudioRecord",
+      "label": "uses",
+      "description": "Audio capture can alternatively use Android AudioRecord API for raw mic input.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AudioCapture",
+      "target_id": "RecordAudioPermission",
+      "label": "requires",
+      "description": "Microphone capture requires RECORD_AUDIO permission requested during onboarding.",
+      "confidence": 90
+    },
+    {
+      "source_id": "AudioCapture",
+      "target_id": "ForegroundService",
+      "label": "runs_as",
+      "description": "Audio capture runs as a foreground service with foregroundServiceType='microphone' declared.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceSimilarityMetric",
+      "target_id": "IdentityEvidence",
+      "label": "feeds_into",
+      "description": "voice_similarity and synthetic_probability scores feed into TRINETRA's Identity Evidence pipeline.",
+      "confidence": 85
+    },
+    {
+      "source_id": "SyntheticProbability",
+      "target_id": "IdentityEvidence",
+      "label": "feeds_into",
+      "description": "Synthetic probability scores contribute to Identity Evidence assessment.",
+      "confidence": 85
+    },
+    {
+      "source_id": "IdentityEvidence",
+      "target_id": "ActionFirewall",
+      "label": "triggers",
+      "description": "Identity Evidence scores trigger Action Firewall alerts at appropriate risk levels.",
+      "confidence": 85
+    },
+    {
+      "source_id": "RiskPipeline",
+      "target_id": "IdentityEvidence",
+      "label": "includes",
+      "description": "Risk pipeline uses identity evidence as one of multiple signals (identity, psychology, intent, context).",
+      "confidence": 85
+    },
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "VoiceCloningTools",
+      "label": "defends_against",
+      "description": "Voice Clone Defense is designed to detect and defend against voice clones created by tools like ElevenLabs and RVC.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VoiceCloningTools",
+      "target_id": "ElevenLabs",
+      "label": "includes",
+      "description": "ElevenLabs is one of the primary voice cloning services that creates realistic synthetic voices.",
+      "confidence": 85
+    },
+    {
+      "source_id": "VoiceCloningTools",
+      "target_id": "RVC",
+      "label": "includes",
+      "description": "RVC is an open-source voice cloning tool used to generate synthetic voice samples.",
+      "confidence": 85
+    },
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "PrivacyContract",
+      "label": "adheres_to",
+      "description": "Voice Clone Defense follows TRINETRA's Privacy Contract for consent, data retention, encryption, and disclosure.",
+      "confidence": 90
+    },
+    {
+      "source_id": "VerificationPipeline",
+      "target_id": "SpeakerEmbeddingModel",
+      "label": "uses",
+      "description": "Verification pipeline runs speaker embedding model on audio windows.",
+      "confidence": 85
+    },
+    {
+      "source_id": "VerificationPipeline",
+      "target_id": "AntiSpoofingModel",
+      "label": "uses",
+      "description": "Verification pipeline runs anti-spoofing model to detect synthetic speech.",
+      "confidence": 85
+    },
+    {
+      "source_id": "VerificationPipeline",
+      "target_id": "TestMode",
+      "label": "powers",
+      "description": "The same verification pipeline is used by both live capture and Test Mode, with only the audio source differing.",
+      "confidence": 85
+    },
+    {
+      "source_id": "TestMode",
+      "target_id": "AudioCapture",
+      "label": "alternative_to",
+      "description": "Test Mode provides a file-based alternative to live call audio capture for demonstration without a real call.",
+      "confidence": 85
+    },
+    {
+      "source_id": "CaptureDignostics",
+      "target_id": "Phase0Capture",
+      "label": "validates",
+      "description": "Capture Diagnostics screen tests whether microphone capture works during active calls to validate Phase 0 feasibility.",
+      "confidence": 85
+    },
+    {
+      "source_id": "AudioRingBuffer",
+      "target_id": "AudioCapture",
+      "label": "buffers",
+      "description": "AudioRingBuffer stores rolling 3-5 second windows of captured audio for inference.",
+      "confidence": 80
+    },
+    {
+      "source_id": "LiveVerificationService",
+      "target_id": "ForegroundService",
+      "label": "implements",
+      "description": "LiveVerificationService is the foreground service implementation for on-device audio capture.",
+      "confidence": 85
+    },
+    {
+      "source_id": "FusionThresholds",
+      "target_id": "VoiceSimilarityMetric",
+      "label": "calibrates",
+      "description": "FusionThresholds maps voice_similarity scores to risk levels for Alert Firewall.",
+      "confidence": 80
+    },
+    {
+      "source_id": "FusionThresholds",
+      "target_id": "SyntheticProbability",
+      "label": "calibrates",
+      "description": "FusionThresholds maps synthetic_probability scores to risk levels.",
+      "confidence": 80
+    },
+    {
+      "source_id": "ContactRepository",
+      "target_id": "RoomDatabase",
+      "label": "uses",
+      "description": "ContactRepository provides database access layer for Room database storing encrypted voiceprints.",
+      "confidence": 80
+    },
+    {
+      "source_id": "AASIST",
+      "target_id": "ASVspoof",
+      "label": "trained_on",
+      "description": "AASIST anti-spoofing model is trained on ASVspoof 2019 LA dataset.",
+      "confidence": 85
+    },
+    {
+      "source_id": "RawNet2",
+      "target_id": "ASVspoof",
+      "label": "trained_on",
+      "description": "RawNet2 anti-spoofing model is trained on ASVspoof dataset.",
+      "confidence": 80
+    },
+    {
+      "source_id": "Resemblyzer",
+      "target_id": "LibriSpeech",
+      "label": "validated_on",
+      "description": "Resemblyzer conversion parity is tested on LibriSpeech speaker samples.",
+      "confidence": 75
+    },
+    {
+      "source_id": "MelFrontend",
+      "target_id": "SpeakerEmbeddingModel",
+      "label": "component_of",
+      "description": "Mel Frontend for frequency analysis is integrated into the speaker embedding model graph.",
+      "confidence": 75
+    },
+    {
+      "source_id": "SincResampler",
+      "target_id": "AudioCapture",
+      "label": "normalizes",
+      "description": "Sinc resampler normalizes audio sample rates with anti-aliasing.",
+      "confidence": 75
+    },
+    {
+      "source_id": "PrimaryUser",
+      "target_id": "TrustedContact",
+      "label": "verifies_calls_from",
+      "description": "Primary user verifies incoming calls against voiceprints of enrolled trusted contacts.",
+      "confidence": 90
+    },
+    {
+      "source_id": "DemoProtocol",
+      "target_id": "ElevenLabs",
+      "label": "uses_for_clones",
+      "description": "Demo protocol uses ElevenLabs-generated cloned voice samples to demonstrate CRITICAL detection.",
+      "confidence": 85
+    },
+    {
+      "source_id": "DemoProtocol",
+      "target_id": "RVC",
+      "label": "uses_for_clones",
+      "description": "Demo protocol uses RVC-cloned voice samples to demonstrate anti-spoofing detection.",
+      "confidence": 85
+    },
+    {
+      "source_id": "Phase0Capture",
+      "target_id": "AudioRecord",
+      "label": "validates",
+      "description": "Phase 0 validates whether AudioRecord can capture usable audio during MODE_IN_CALL.",
+      "confidence": 85
+    },
+    {
+      "source_id": "TelecomCompliance",
+      "target_id": "DisclosureBanner",
+      "label": "requires",
+      "description": "Telecom compliance requires visible disclosure before audio capture begins.",
+      "confidence": 85
+    },
+    {
+      "source_id": "TestMode",
+      "target_id": "WAVFormat",
+      "label": "uses",
+      "description": "Test Mode loads pre-recorded WAV files for voice verification testing without a live call.",
+      "confidence": 75
+    },
+    {
+      "source_id": "VoiceCloneDefense",
+      "target_id": "ActionFirewall",
+      "label": "integrates_with",
+      "description": "Voice Clone Defense integrates its scores into TRINETRA's existing Action Firewall UI and alerting system.",
+      "confidence": 90
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

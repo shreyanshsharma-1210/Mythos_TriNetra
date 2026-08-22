@@ -23,5 +23,7 @@ data class Interaction(
     val riskAssessment: RiskAssessment? = null,
     val protectionDecision: String? = null,
     val incidentType: com.trustmesh.app.core.incident.IncidentType? = null,
-    val isBlocked: Boolean = false
+    val isBlocked: Boolean = false,
+    val groqResponse: com.trustmesh.app.core.intelligence.groq.GroqAnalysisResponse? = null
 )
+
