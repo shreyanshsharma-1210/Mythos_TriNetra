@@ -12,7 +12,28 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- ── Voice Clone Defence Module permissions ──────────────────────── -->
+    <!-- Microphone: voice enrollment records ~60 s of speech for embedding -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Internet + network: WebRTC signaling and peer discovery -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Full-screen intent: incoming VoIP call must own the screen (API 34+) -->
+    <uses-permission
+        android:name="android.permission.USE_FULL_SCREEN_INTENT"
+        android:minSdkVersion="34" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        android:minSdkVersion="34" />
+
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
     <application
+        android:name=".TriNetraApplication"
         android:allowBackup="true"
         android:icon="@drawable/app_logo"
         android:label="TriNetra"
@@ -78,6 +99,29 @@
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>
+
+        <!-- ── Voice Clone Defence Module services ──────────────────────── -->
+        <!--
+          LiveVerificationService: holds the microphone while doing on-device
+          speaker-identity and clone-detection inference during a live call.
+          Declared as microphone foreground service (not phoneCall) because this
+          module does not integrate with the telephony stack by design.
+        -->
+        <service
+            android:name=".vcd.service.LiveVerificationService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!--
+          VoipCallService: owns the WebRTC peer connection for the entire duration
+          of a voice call. Also declared as microphone foreground service for the
+          same reason — no telephony integration, full WebRTC stack.
+        -->
+        <service
+            android:name=".vcd.service.VoipCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
     </application>
 
 </manifest>

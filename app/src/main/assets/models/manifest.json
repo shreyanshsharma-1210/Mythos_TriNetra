@@ -1,0 +1,51 @@
+{
+  "model_id": "resemblyzer+aasist-onnx-2026-08-20",
+  "speaker_encoder": "Resemblyzer VoiceEncoder (GE2E), mel front end folded into the graph",
+  "spoof_detector": "AASIST (clovaai), ASVspoof 2019 LA pretrained checkpoint",
+  "runtime": "onnxruntime-android",
+  "quantization": "speaker=float32, spoof=float32",
+  "converted_at_utc": "2026-08-20T19:27:42Z",
+  "speaker_parity_cosine": 1.0,
+  "spoof_parity_max_abs_delta": 4.76837158203125e-07,
+  "notes": "Parity measured against the PyTorch reference on 3 LibriSpeech speakers. These are conversion-fidelity figures only: they show the exported model computes what the checkpoint computes. They say nothing about how well either model detects a clone, which requires a labelled evaluation set and has not been measured.",
+  "detail": {
+    "speaker": {
+      "status": "ok",
+      "runtime": "onnxruntime",
+      "precision": "float32",
+      "input_shape": [
+        1,
+        25600
+      ],
+      "output_shape": [
+        1,
+        256
+      ],
+      "parity_cosine_mean": 1.0,
+      "parity_cosine_min": 0.9999999403953552,
+      "fp32_parity_cosine_min": 0.9999999403953552,
+      "partials_tested": 55,
+      "size_bytes": 6387431
+    },
+    "spoof": {
+      "status": "ok",
+      "runtime": "onnxruntime",
+      "precision": "float32",
+      "input_shape": [
+        1,
+        64600
+      ],
+      "output_shape": [
+        1,
+        2
+      ],
+      "class_order_verified": true,
+      "pytorch_mean_p_synthetic_on_bonafide": 0.3301645815372467,
+      "parity_max_abs_delta": 4.76837158203125e-07,
+      "parity_mean_abs_delta": 1.239815077269668e-07,
+      "fp32_parity_max_abs_delta": 4.76837158203125e-07,
+      "windows_tested": 18,
+      "size_bytes": 1491453
+    }
+  }
+}
