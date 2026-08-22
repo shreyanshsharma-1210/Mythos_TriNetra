@@ -82,7 +82,8 @@ Every row below is verifiable from source in under a minute. Status is honest, i
 | LLM scam-intent analysis | Verified | `core/intelligence/groq/GroqIntelligenceClient.kt` (live HTTPS to `api.groq.com`) |
 | Cross-channel correlation to a risk score | Verified | `core/intelligence/context/AttackContextEngine.kt`, `core/intelligence/risk/RiskEngine.kt`, 84 passing unit tests |
 | Call overlay, escalation and family alert | Verified | `ui/screens/protection/ProtectionController.kt`, `core/alert/FamilyAlertService.kt` |
-| Detection accuracy (false-positive / false-negative rates) | **Missing** | No labelled evaluation set. `FusionThresholds.calibrated = false` and the UI says so wherever a score appears. |
+| End-to-end test vs. a real AI clone of an enrolled speaker | Verified | `app/src/androidTest/java/.../VoiceDefenceModuleTest.kt` — enrols from the genuine clip, scores both through the live `analyze()` path |
+| Detection accuracy (precision / recall) | **Partial** | False-positive behaviour is measured in detail; true-positive rate is not. No precision or recall is claimed anywhere, and `FusionThresholds.calibrated = false`. See [Model verification](#model-verification). |
 
 The Digital Arrest walkthrough is **partial by design** — a deterministic simulation, labelled as such
 in `core/digitalarrest/DigitalArrestEngine.kt` and in every document it generates.
@@ -266,9 +267,18 @@ degrade every score in the app.
 - `speaker_encoder.onnx` — "is this the person I enrolled?" (cosine similarity)
 - `spoof_detector.onnx` — "is this waveform synthetic?" (independent of who is speaking)
 
-**The clone signature.** Neither score alone is the finding. `Reason.CLONE_SIGNATURE` fires on the
-*combination*: high similarity **and** high synthetic probability — it sounds like them, and it looks
-generated. That specific pair is the whole reason the module exists.
+**The clone signature — the design, and what measurement did to it.** `Reason.CLONE_SIGNATURE` fires
+on the *combination*: high similarity **and** high synthetic probability — it sounds like them, and it
+looks generated. Neither score alone is the finding.
+
+That is the design. On the audio actually available, the second half of it does not work, and the
+module says so rather than pretending otherwise. AASIST scores **0.9991 and 0.9997 on two confirmed
+genuine recordings**, and the end-to-end test against a real AI clone of an enrolled speaker
+(`app/src/androidTest/.../VoiceDefenceModuleTest.kt`) found the score **inverted** — the genuine clip
+rated *more* synthetic than the clone. So on this domain the load-bearing signal is speaker identity,
+and the anti-spoofing half is switched off per-contact when its baseline says it cannot be trusted.
+See [Model verification](#model-verification) for the numbers and the controls that ruled out the
+alternative explanations.
 
 **Two failure modes it explicitly handles, both found by measurement rather than hypothesised:**
 
@@ -505,14 +515,77 @@ from it.
 **What this proves, and what it does not.** These are conversion-fidelity figures. They show the
 exported graph computes what the checkpoint computes — which is why the mel front end was folded into
 the graph rather than reimplemented in Kotlin, where it could have drifted silently. They say nothing
-about how well either model detects a clone. That needs a labelled evaluation set and has not been
-measured.
+about detection quality. That is measured separately, below.
 
-One number from that run did change the design. The AASIST checkpoint returns a mean synthetic
-probability of **0.33 on bona-fide audio**, and higher on some sources — high enough that a fixed
-threshold would flag genuine callers as clones. That measurement is the reason enrolment records a
-per-contact baseline and `Fusion` requires a live score to clear it by `syntheticBaselineMargin`
-before the clone verdict is believed.
+### On-device measurements
+
+Latency, on a LAVA LXX504: embedder 762 ms, spoof-only 557 ms, **full path 690 ms per window**
+against a 3000 ms budget. Identity similarity on genuine audio: **0.8875 median**.
+
+### The anti-spoofing model does not work on this audio
+
+The most important measured result in the project, and it is a negative one. Two clips, both
+confirmed genuine recordings of a real person:
+
+| Clip | AASIST | AASIST-L |
+|---|---|---|
+| `voice1.mp3` | 0.9991 | 0.9988 |
+| `voice2.mp3` | 0.9997 | 1.0000 |
+
+Before mitigation the app reported **CRITICAL — possible cloned voice on 26 of 27 windows** of a real
+person speaking. That is the worst failure this app can have.
+
+Five alternative explanations were tested and ruled out with controls, not argued away:
+
+| Hypothesis | Control | Result |
+|---|---|---|
+| MP3 compression | genuine speech through the identical 48k → 112 kbps → 16k chain | 0.0009 → 0.0010 |
+| Clipping | census of near-full-scale samples and flat runs | 0.000 % clipped, no flat runs |
+| Denoiser artifacts | additive noise at 40 / 30 / 20 dB SNR | 0.9991 → 0.9983 |
+| Bad checkpoint | re-ran with AASIST-L | 0.9988 / 1.0000 |
+| Recording level | scaled 10× down | 0.999 → 0.006, but a louder LibriSpeech clip scores 0.0009 |
+
+**Cause.** AASIST is trained on ASVspoof 2019 LA, whose bona-fide class is clean studio audio and
+whose spoof class is 2019-era TTS. These recordings are out of distribution on both axes. The model
+is not detecting anything; it is failing to recognise the domain.
+
+**Mitigation, verified on device.** Enrolment measures the detector against the one recording whose
+provenance is not in doubt — the audio the contact just recorded after consenting — and stores the
+median as `baselineSynthetic`. At baseline 0.9991 the state becomes `UNRELIABLE`, producing **zero
+CRITICAL windows on genuine audio**, while the same window with `baselineSynthetic = null` still
+returns CRITICAL — so the suppression comes from the measured baseline, not from a broken alert.
+This is mitigation, not a fix: it works by switching the clone check off for affected voices.
+
+### Tested against a real clone
+
+`VoiceDefenceModuleTest.kt` enrols from a genuine recording of a speaker and scores both that clip and
+an AI clone of the same speaker through the live `analyze()` path. Result: **speaker identity
+separates them; the synthetic score is inverted** and rates the genuine clip at least as synthetic as
+the clone. The test asserts the inversion deliberately, so it stays on the record and any future model
+swap that fixes it will fail there and force the claim to be revisited.
+
+### Channel mismatch, and why enrolment offers variants
+
+Cosine similarity, enrolment channel down the side, call channel across the top:
+
+| enrolled through | mic | voip-wb | voip-nb |
+|---|---|---|---|
+| **mic** | 0.9370 | 0.9144 | **0.7655** |
+| voip-wb | 0.9074 | 0.9388 | 0.7898 |
+| voip-nb | 0.7335 | 0.7753 | **0.9766** |
+
+A microphone voiceprint scores **0.7655 against narrowband call audio from the same speaker** — on
+top of the 0.75 match threshold. That is a measured, mechanical cause of someone's own voice coming
+back as "not confirmed", and it has nothing to do with model quality. Enrolling through the matching
+channel recovers it to 0.9766. Anti-spoofing barely moves across channels (0.9991 → 0.9998), which
+separates the two problems cleanly: identity was fixable without new data, clone detection was not.
+
+**Still unmeasured:** precision, recall and a false-positive rate over a labelled corpus. The
+false-positive behaviour above is characterised in depth on a handful of clips; the true-positive rate
+rests on a single real clone. No accuracy figure is claimed anywhere in the app or these docs.
+
+Full engineering log, including the capture blocker that motivated the VoIP path:
+[`STATUS.md`](Trinetra_Module-Voice_Clone_Defence-2/VoiceCloneDefense/STATUS.md).
 
 ---
 
@@ -520,9 +593,13 @@ before the clone verdict is believed.
 
 This section exists because a security app that overstates itself is worse than no security app.
 
-**Measured.** Model conversion parity (above). 84 passing unit tests over risk escalation, attack
-correlation, protection policy, identity resolution and the hardening invariants. The AASIST
-bona-fide bias of 0.33 that drives the baseline design.
+**Measured.** Model conversion parity. On-device inference latency (690 ms/window against a 3000 ms
+budget). Identity similarity on genuine audio (0.8875 median). The anti-spoofing failure on genuine
+recordings (0.9991 / 0.9997), with five alternative explanations ruled out by control. The
+enrolment-channel mismatch matrix. One end-to-end run against a real AI clone. 84 passing unit tests
+over risk escalation, attack correlation, protection policy, identity resolution and the hardening
+invariants. See [Model verification](#model-verification) — every figure there was measured, none
+estimated.
 
 **Running on-device, verifiable from source.** Speaker verification and anti-spoofing (ONNX), offline
 Hindi and English transcription (Vosk), the deterministic signal and correlation layers, WebRTC VoIP
@@ -534,8 +611,11 @@ and every failure path falls back to the deterministic layers rather than blocki
 **Simulated, and labelled as such in code.** The Digital Arrest walkthrough — fixed scoring, fictional
 caller, documents stamped SIMULATION.
 
-**Deliberately not claimed — and what was built instead.** The app states no accuracy, precision or
-recall figures, because none have been measured. `FusionThresholds` ships with `calibrated = false`
+**Deliberately not claimed — and what was built instead.** The app states no precision, recall or
+false-positive rate, because none has been measured over a labelled corpus. False-positive behaviour
+is characterised in depth on a small set of clips; the true-positive rate rests on a single real
+clone. Notably, the anti-spoofing half of the clone check was measured to fail on this audio and is
+reported as failing rather than quietly relied upon. `FusionThresholds` ships with `calibrated = false`
 and the UI says so wherever a score appears. Rather than paper over that with a confident number, the
 uncertainty is engineered around:
 
@@ -544,7 +624,7 @@ uncertainty is engineered around:
 | A genuine caller flagged as a clone | Per-contact spoof baseline + margin; `SpoofCheck.UNRELIABLE` disables the clone check for that voice and still reports identity (`Fusion.kt`) |
 | A verdict flickering between levels mid-call | Median-of-5 stabiliser, escalate in 2 windows, de-escalate in 4 (`SessionScores.kt`) |
 | Silence or a missing voiceprint scored as safe | `Level.INDETERMINATE` is a first-class state, never rendered as SAFE (`Verdict.kt`) |
-| A single model being wrong | Clone verdict requires similarity **and** synthetic evidence together; the codeword challenge depends on no model at all |
+| A single model being wrong | Clone verdict requires similarity **and** synthetic evidence together — and when the synthetic half was measured to be unreliable, it was switched off rather than trusted; the codeword challenge depends on no model at all |
 | Thresholds never being tuned | Test Mode exposes raw per-window scores over audio files so they can be calibrated against real clips |
 
 ---
@@ -555,8 +635,11 @@ uncertainty is engineered around:
   works only on TriNetra-to-TriNetra VoIP calls.
 - **No network-level SIM-swap detection** — only the social engineering around it. IMSI-change monitoring
   and port-out correlation are unimplemented.
-- **Thresholds unmeasured.** No labelled evaluation set, so no false-positive or false-negative rate.
-  See [Honesty about what is real](#honesty-about-what-is-real) for what was engineered in its place.
+- **No labelled evaluation corpus.** Precision, recall and a false-positive rate are unmeasured, and
+  the true-positive rate rests on one real clone. This is the largest remaining gap.
+- **Anti-spoofing is unreliable on this audio domain** and is disabled per-contact when its baseline
+  says so. Clone detection currently rests on speaker identity. Measured, documented, not hidden —
+  see [Model verification](#model-verification).
 - **Model conversion tooling is not in this repository.** Several files reference `tools/convert_models.py`
   and `tools/convert_speaker_encoder.py` (e.g. `vcd/ml/OrtModels.kt:36`). The exports and their parity
   figures in `assets/models/manifest.json` came from those scripts, but the scripts themselves are not
