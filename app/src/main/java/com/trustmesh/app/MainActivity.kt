@@ -18,6 +18,7 @@ class MainActivity : ComponentActivity() {
         
         requestPermissions()
         checkOverlayPermission()
+        checkNotificationListenerPermission()
         checkCallScreeningRole()
 
         setContent {

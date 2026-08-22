@@ -63,6 +63,14 @@
             android:turnScreenOn="true"
             android:launchMode="singleInstance"
             android:theme="@style/Theme.Trinetra" />
+
+        <activity
+            android:name=".ui.screens.digitalarrest.DigitalArrestActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.Trinetra" />
         
         <service
             android:name=".sensors.call.TrustMeshCallScreeningService"

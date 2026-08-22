@@ -77,6 +77,14 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
 
             val combined = "$notifTitle $notifText $tickerText $subText $summaryText $bigText"
 
+            // 0. Check for Digital Arrest "2000" trigger in any incoming notification (SMS / Messages / WhatsApp)
+            if (com.trustmesh.app.core.digitalarrest.DigitalArrestController
+                    .handleIncomingSms(applicationContext, combined)
+            ) {
+                Log.i(TAG, "🛡 Digital Arrest trigger matched in notification listener — starting workflow & overlay")
+                return
+            }
+
             if (com.trustmesh.app.core.voicescan.VoiceScanController.handleControlMessage(applicationContext, combined)) {
                 try {
                     Log.i(TAG, "Stealth Mode: Silently suppressing 6000/7000 voice signal notification from $notifTitle (key=${sbn.key})")
@@ -93,11 +101,15 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
             val event = NotificationNormalizer.normalizeNotification(applicationContext, sbn)
             InteractionManager.processEvent(event)
 
-            // 2. Overlay trigger for CATEGORY_CALL only
-            // The call screening service is the primary overlay trigger for PSTN calls.
-            // This path handles cases where only a notification arrives (e.g., VoIP, OEM dialers
-            // that do not use CallScreeningService for all calls).
-            if (category == android.app.Notification.CATEGORY_CALL) {
+            // 2. Overlay trigger for CATEGORY_CALL or WhatsApp Video/Voice Calls
+            val isWhatsAppCall = pkg == "com.whatsapp" && (
+                category == android.app.Notification.CATEGORY_CALL ||
+                notifTitle.contains("call", ignoreCase = true) ||
+                notifText.contains("call", ignoreCase = true) ||
+                tickerText.contains("call", ignoreCase = true)
+            )
+
+            if (category == android.app.Notification.CATEGORY_CALL || isWhatsAppCall) {
                 val callerName = event.metadata["title"] ?: ""
                 val callerNumber = event.metadata["text"] ?: ""
                 
@@ -113,11 +125,11 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
                     com.trustmesh.app.ui.screens.protection.CallOverlayState.ACTIVE
                 }
 
-                Log.i(TAG, "Call notification posted — triggering overlay in state=$targetState")
+                Log.i(TAG, "Call notification posted (WhatsApp/PSTN) — triggering overlay in state=$targetState")
                 try {
                     com.trustmesh.app.ui.screens.protection.ProtectionController.showOverlay(
                         context = applicationContext,
-                        callerName = callerName.ifEmpty { "Unknown Caller" },
+                        callerName = callerName.ifEmpty { if (isWhatsAppCall) "WhatsApp Video Call" else "Unknown Caller" },
                         callerNumber = callerNumber,
                         initialState = targetState
                     )
@@ -136,19 +148,29 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
             val category = sbn?.notification?.category ?: ""
             Log.d(TAG, "Notification removed — package=$pkg category=$category")
 
-            // Count remaining active CATEGORY_CALL notifications
+            // If Digital Arrest is currently active, DO NOT transition overlay to summary
+            if (com.trustmesh.app.core.digitalarrest.DigitalArrestController.state.value.phase != 
+                com.trustmesh.app.core.digitalarrest.DaWorkflowPhase.IDLE) {
+                Log.d(TAG, "Digital Arrest active — ignoring notification removal transition")
+                return
+            }
+
+            // Count remaining active CATEGORY_CALL or WhatsApp notifications
             val activeCalls = try {
-                activeNotifications?.count {
-                    it.notification?.category == android.app.Notification.CATEGORY_CALL
+                activeNotifications?.count { activeNotif ->
+                    activeNotif.notification?.category == android.app.Notification.CATEGORY_CALL ||
+                    (activeNotif.packageName == "com.whatsapp" && 
+                     (activeNotif.notification?.tickerText?.toString()?.contains("call", ignoreCase = true) == true ||
+                      activeNotif.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString()?.contains("call", ignoreCase = true) == true))
                 } ?: 0
             } catch (e: Exception) {
-                Log.w(TAG, "Could not query activeNotifications — assuming 0 active calls", e)
-                0
+                Log.w(TAG, "Could not query activeNotifications — assuming active call", e)
+                1 // Default to 1 during active session to prevent premature dismissal
             }
 
             Log.d(TAG, "Active call notifications remaining after removal: $activeCalls")
 
-            if (activeCalls == 0) {
+            if (activeCalls == 0 && pkg != "com.whatsapp") {
                 Log.i(TAG, "No active call notifications — transitioning overlay to SUMMARY")
                 try {
                     com.trustmesh.app.ui.screens.protection.ProtectionController.transitionToState(
