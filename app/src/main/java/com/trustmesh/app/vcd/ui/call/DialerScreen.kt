@@ -1,6 +1,11 @@
 package com.trustmesh.app.vcd.ui.call
 
 import android.Manifest
+import android.app.NotificationManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -31,6 +36,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +61,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -103,6 +112,17 @@ fun DialerScreen(
     var showSettings by remember { mutableStateOf(false) }
     var selectedContactId by remember { mutableStateOf<Long?>(null) }
 
+    // On Android 14+ USE_FULL_SCREEN_INTENT is a special permission the user must grant in Settings.
+    // Without it, the incoming-call full-screen notification never wakes the screen.
+    val nm = remember { context.getSystemService(NotificationManager::class.java) }
+    var canFullScreen by remember { mutableStateOf(nm.canUseFullScreenIntent()) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            canFullScreen = nm.canUseFullScreenIntent()
+        }
+    }
+
     var phoneContacts by remember { mutableStateOf<List<PhoneContact>>(emptyList()) }
     var contactsGranted by remember { mutableStateOf(PhoneContacts.hasPermission(context)) }
     val contactsLauncher = rememberLauncherForActivityResult(
@@ -111,6 +131,12 @@ fun DialerScreen(
 
     LaunchedEffect(contactsGranted) {
         if (contactsGranted) phoneContacts = PhoneContacts.load(context)
+    }
+
+    LaunchedEffect(micGranted) {
+        if (micGranted && !available) {
+            CallManager.goAvailable(app, selectedContactId)
+        }
     }
 
     var pendingLabel by remember { mutableStateOf<String?>(null) }
@@ -168,6 +194,24 @@ fun DialerScreen(
             if (!micGranted) {
                 MicNeeded(onRequestMic)
                 return@Column
+            }
+
+            if (!canFullScreen) {
+                FullScreenIntentNeeded {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        context.startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                                .setData(Uri.fromParts("package", context.packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } else {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                .setData(Uri.fromParts("package", context.packageName, null))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
             }
 
             TabRow(
@@ -420,6 +464,29 @@ private fun MicNeeded(onRequest: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
             )
             Button(onClick = onRequest) { Text("Grant microphone access") }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenIntentNeeded(onOpenSettings: () -> Unit) {
+    Card(
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = StatusColors.suspicious.copy(alpha = 0.12f),
+        ),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Incoming calls may not appear", fontWeight = FontWeight.Bold, color = StatusColors.suspicious)
+            Text(
+                "This app needs permission to show calls over the lock screen. Without it, " +
+                    "your phone's screen stays off when someone calls and the call is missed.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Button(
+                onClick = onOpenSettings,
+                colors = ButtonDefaults.buttonColors(containerColor = StatusColors.suspicious),
+            ) { Text("Allow in Settings") }
         }
     }
 }

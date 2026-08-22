@@ -63,10 +63,12 @@ class SignalingServer(private val scope: CoroutineScope) : Closeable {
                     runCatching { socket.close() }
                     break
                 }
+                Log.i(TAG, "accepted inbound connection from ${socket.inetAddress?.hostAddress}")
                 val handler = onConnection
                 if (handler == null) {
                     // Nothing is prepared to take the call, so refuse it rather than leaving the
                     // caller ringing into a socket nobody will ever answer.
+                    Log.w(TAG, "no onConnection handler set — refusing inbound call")
                     runCatching { socket.close() }
                 } else {
                     handler(socket)

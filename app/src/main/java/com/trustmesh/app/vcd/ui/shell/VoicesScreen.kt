@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -215,13 +216,41 @@ private fun VoiceRow(contact: EnrolledContact, onVerify: () -> Unit, onDelete: (
         },
     )
     if (contact.usableWithCurrentModel) {
-        Row(Modifier.padding(start = 74.dp, end = 16.dp, bottom = 8.dp)) {
+        Row(
+            Modifier.padding(start = 74.dp, end = 16.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val app = LocalContext.current.applicationContext as? com.trustmesh.app.vcd.VcdApp
+            val peers by com.trustmesh.app.vcd.voip.CallManager.peers.collectAsStateWithLifecycle()
+
+            TextButton(
+                onClick = {
+                    if (app != null) {
+                        val peer = peers.firstOrNull()
+                        if (peer != null) {
+                            com.trustmesh.app.vcd.voip.CallManager.placeCall(app, peer, contact.id, contact.name)
+                        } else {
+                            android.widget.Toast.makeText(
+                                app,
+                                "Searching for local TriNetra devices over Wi-Fi...",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            com.trustmesh.app.vcd.voip.CallManager.rescan()
+                        }
+                    }
+                },
+                modifier = Modifier.heightIn(min = MinTouchTarget),
+            ) {
+                Icon(Icons.Filled.Phone, contentDescription = "WebRTC VoIP Call", modifier = Modifier.height(18.dp))
+                Text("  📞 WebRTC Call")
+            }
+
             TextButton(
                 onClick = onVerify,
                 modifier = Modifier.heightIn(min = MinTouchTarget),
             ) {
                 Icon(Icons.Filled.Mic, contentDescription = null, modifier = Modifier.height(18.dp))
-                Text("  Screen a call against ${contact.name}")
+                Text("  Screen")
             }
         }
     }

@@ -21,7 +21,7 @@ import java.util.ArrayDeque
  * directly, which keeps the "no backend" property of the POC while removing the part that made it
  * look like a debug tool.
  */
-class PeerDiscovery(context: Context) : Closeable {
+class PeerDiscovery(private val context: Context) : Closeable {
 
     data class Peer(
         val name: String,
@@ -44,22 +44,35 @@ class PeerDiscovery(context: Context) : Closeable {
 
     private var registrationListener: NsdManager.RegistrationListener? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
 
-    /**
-     * Resolves are serialised on purpose.
-     *
-     * NsdManager on several Android versions fails every concurrent resolve with FAILURE_ALREADY_
-     * ACTIVE, and a handful of devices appearing at once is exactly the normal case here. Queueing
-     * them costs a few hundred milliseconds and avoids a discovery list that is silently missing
-     * whichever peers happened to arrive together.
-     */
     private val resolveQueue = ArrayDeque<NsdServiceInfo>()
     private var resolving = false
     private val lock = Any()
 
+    private fun acquireMulticastLock() {
+        if (multicastLock == null) {
+            val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            multicastLock = wifi?.createMulticastLock("TrinetraMDNS")?.apply {
+                setReferenceCounted(true)
+                acquire()
+            }
+        }
+    }
+
+    private fun releaseMulticastLock() {
+        multicastLock?.let {
+            if (it.isHeld) {
+                runCatching { it.release() }
+            }
+        }
+        multicastLock = null
+    }
+
     /** Announces this device so others can find it. [displayName] is what they will see. */
     fun advertise(displayName: String, port: Int) {
         if (registrationListener != null) return
+        acquireMulticastLock()
 
         val info = NsdServiceInfo().apply {
             serviceName = displayName
@@ -98,6 +111,7 @@ class PeerDiscovery(context: Context) : Closeable {
 
     fun startDiscovery() {
         if (discoveryListener != null) return
+        acquireMulticastLock()
 
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) {
@@ -198,6 +212,7 @@ class PeerDiscovery(context: Context) : Closeable {
     override fun close() {
         stopDiscovery()
         stopAdvertising()
+        releaseMulticastLock()
         _peers.value = emptyList()
     }
 

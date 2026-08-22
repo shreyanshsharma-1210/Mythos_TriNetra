@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import java.net.Socket
@@ -64,6 +65,8 @@ object CallManager {
         get() = discovery?.searching ?: notSearching
 
     val inCall: Boolean get() = _state.value.active
+
+    fun currentSession(): CallSession? = session
 
     // ------------------------------------------------------------- availability
 
@@ -123,6 +126,7 @@ object CallManager {
         contactLabel: String? = null,
     ) {
         this.app = app
+        Log.i(TAG, "placeCall to ${peer.name} (${peer.address}), contactId=$contactId, inCall=$inCall")
         if (inCall) return
         pendingLabel = contactLabel
         val s = newSession(app)
@@ -134,9 +138,11 @@ object CallManager {
 
     private fun onInboundConnection(socket: Socket) {
         val application = app
+        Log.i(TAG, "onInboundConnection from ${socket.inetAddress?.hostAddress}: app=${application != null}, inCall=$inCall")
         if (application == null || inCall) {
-            // Busy, or not set up. Closing the socket is an honest "unavailable" — better than
-            // accepting a call this device cannot actually take.
+            // Busy handling an active call session. Closing extra sockets
+            // prevents duplicate TCP connection attempts from tearing down the ongoing session.
+            Log.w(TAG, "refusing inbound call (app=${application != null}, inCall=$inCall)")
             runCatching { socket.close() }
             return
         }
@@ -148,7 +154,8 @@ object CallManager {
                 watchForRingStop()
                 // Started here rather than from the UI: the whole point of an incoming call is
                 // that it reaches the user when they are not looking at the app.
-                VoipCallService.start(application, callerName)
+                runCatching { VoipCallService.start(application, callerName) }
+                    .onFailure { Log.w(TAG, "could not start call service for incoming call", it) }
             }
             s.adoptIncoming(socket, defaultContactId)
         }
@@ -157,12 +164,8 @@ object CallManager {
     /** Stops the ringtone as soon as the call leaves a ringing state, however it leaves it. */
     private fun watchForRingStop() {
         scope.launch {
-            state.collect { s ->
-                if (s.stage != CallStage.INCOMING && s.stage != CallStage.RINGING_OUT) {
-                    ringer?.stop()
-                    return@collect
-                }
-            }
+            state.first { s -> s.stage != CallStage.INCOMING && s.stage != CallStage.RINGING_OUT }
+            ringer?.stop()
         }
     }
 
@@ -190,6 +193,8 @@ object CallManager {
     /** Clears a finished call so the dialler comes back. */
     fun dismiss() {
         hangUp()
+        session?.close()
+        session = null
         _state.value = CallState()
     }
 

@@ -42,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -162,6 +163,32 @@ fun ActiveCallScreen(state: CallState, onDismiss: () -> Unit) {
                 level = level,
                 onClick = { showDetail = !showDetail },
             )
+
+            if (connected) {
+                val intelState by com.trustmesh.app.callaudio.webrtc.WebRtcIntelligenceCoordinator.state.collectAsStateWithLifecycle()
+                var isExpanded by remember { mutableStateOf(false) }
+
+                LaunchedEffect(intelState.alertLevel) {
+                    if (intelState.alertLevel.ordinal >= com.trustmesh.app.callaudio.webrtc.AlertLevel.ELEVATED.ordinal) {
+                        isExpanded = true
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                if (isExpanded) {
+                    com.trustmesh.app.ui.screens.webrtccall.WebRtcCallOverlay(
+                        state = intelState,
+                        onCollapse = { isExpanded = false },
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                } else {
+                    com.trustmesh.app.ui.screens.webrtccall.WebRtcCallPill(
+                        state = intelState,
+                        onExpand = { isExpanded = true },
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
+            }
 
             if (showDetail && connected) {
                 Spacer(Modifier.height(14.dp))
@@ -457,7 +484,7 @@ private fun CallControls(state: CallState, onDismiss: () -> Unit) {
             }
 
             RoundCallButton(Icons.Filled.CallEnd, "End", StatusColors.critical) {
-                CallManager.hangUp()
+                CallManager.dismiss()
             }
         }
     }
