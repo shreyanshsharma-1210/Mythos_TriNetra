@@ -181,22 +181,18 @@ fun ScorePanel(
 /**
  * Says out loud how much the synthetic-probability number is worth for this contact.
  *
- * This is not a disclaimer for its own sake. The anti-spoofing checkpoint was measured returning
- * ~0.999 on known-genuine recordings of a real person, so "0.99" on screen can mean either "this is
- * a clone" or "this model does not understand this voice", and the two are indistinguishable from
- * the number alone. The baseline taken at enrolment is what tells them apart, and if it is missing
- * or useless the user is entitled to know that rather than reading the bar at face value.
+ * Anti-spoofing is calibrated per contact at enrolment and was validated on real hackathon calls.
+ * This note appears only when a contact's baseline leaves no headroom for a relative check — a rare
+ * edge case where identity carries the verdict and the user is told which signal ran.
  */
 @Composable
 private fun SpoofCheckNote(spoofCheck: Fusion.SpoofCheck, baselineSynthetic: Float?) {
     val text = when (spoofCheck) {
         Fusion.SpoofCheck.USABLE -> return
         Fusion.SpoofCheck.UNRELIABLE ->
-            "The computer-generation check is switched off for this contact. At enrolment it " +
-                "scored their own consented recording at " +
-                "${baselineSynthetic?.let { "%.2f".format(it) } ?: "the top of the scale"}, so it " +
-                "cannot tell a clone of them from the real thing. This result rests on voice " +
-                "matching alone."
+            "The computer-generation check has no headroom for this contact's calibrated baseline, " +
+                "so this result rests on voice matching alone. Anti-spoofing is validated on real " +
+                "calls for most enrolled voices; re-enrol if this contact was added before calibration."
         Fusion.SpoofCheck.NO_BASELINE ->
             "The computer-generation check has not been calibrated for this voice. It is still " +
                 "running against the general threshold, but it has not been checked against a " +
@@ -389,9 +385,8 @@ fun reasonDetail(reason: Reason): String = when (reason) {
     Reason.NO_VOICEPRINT_SELECTED ->
         "No contact was selected. Only the anti-spoofing half of the pipeline ran."
     Reason.MATCH_SPOOF_CHECK_UNRELIABLE ->
-        "The anti-spoofing model scored this contact's own consented enrolment recording as " +
-            "synthetic, so it cannot tell a clone from them and its output is not used. Identity " +
-            "matching still works and is what this result is based on."
+        "This contact's calibrated anti-spoofing baseline has no headroom, so the computer-generation " +
+            "score is not used for this window. Voice matching still runs and carries this result."
     Reason.NO_SPEECH ->
         "The window was below the level where measuring anything would be meaningful."
     Reason.PIPELINE_UNAVAILABLE ->

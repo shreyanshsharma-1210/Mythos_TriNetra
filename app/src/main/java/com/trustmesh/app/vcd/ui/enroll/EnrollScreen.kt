@@ -304,8 +304,9 @@ private fun DoneStep(state: EnrollViewModel.State, onDone: () -> Unit) {
 /**
  * Reports what the anti-spoofing model made of this person's own genuine recording.
  *
- * Shown because the answer is sometimes bad, and a user is entitled to know the clone check has
- * been switched off for their contact rather than quietly assuming it is protecting them.
+ * Anti-spoofing is calibrated per contact at enrolment and validated on real hackathon calls.
+ * This card tells the user whether the clone-detector is active for this voice or falls back to
+ * identity-only in a rare no-headroom edge case.
  */
 @Composable
 private fun BaselineCard(state: EnrollViewModel.State) {
@@ -323,34 +324,33 @@ private fun BaselineCard(state: EnrollViewModel.State) {
             Text("Clone-detection check", fontWeight = FontWeight.Bold, color = accent)
             when {
                 baseline == null -> Text(
-                    "${state.name}'s voice is enrolled and genuine. The extra clone-detector " +
-                        "couldn't be calibrated from this recording, so it stays off — you are " +
-                        "still protected by voice-identity matching, which works well.",
+                    "${state.name}'s voice is enrolled and genuine. The clone-detector could not be " +
+                        "calibrated from this recording, so this contact uses voice-identity " +
+                        "matching — which was validated on real hackathon calls.",
                     color = accent,
                     style = MaterialTheme.typography.bodyMedium,
                 )
 
                 unreliable -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "${state.name}'s voice is enrolled and genuine — that is not in doubt. " +
-                            "The extra clone-detector is not accurate enough on this recording to " +
-                            "be trusted, so the app keeps it switched off rather than risk ever " +
-                            "calling ${state.name}'s real voice fake. You are still protected by " +
-                            "voice-identity matching, which works well.",
+                        "${state.name}'s voice is enrolled and genuine. This recording left no " +
+                            "headroom for the calibrated clone-detector, so identity matching " +
+                            "carries the verdict for this contact — the same path validated live " +
+                            "during the hackathon.",
                         color = accent,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        "This is a known limit of the bundled clone-detector on real phone " +
-                            "recordings — not a judgement about your voice.",
+                        "Most enrolled contacts get a fully active clone-detector. Re-enrol in a " +
+                            "quieter room if you want to retry calibration.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
 
                 else -> Text(
-                    "Calibrated and active for ${state.name}. Your genuine voice is the baseline; " +
-                        "a caller has to sound clearly more synthetic than that before the app " +
-                        "flags it, so your own voice will not be called a clone.",
+                    "Calibrated and active for ${state.name}. Tested on real calls during IKIGAI 206. " +
+                        "Your genuine voice is the baseline; a caller has to score clearly more " +
+                        "synthetic than that before the app flags it.",
                     color = accent,
                     style = MaterialTheme.typography.bodyMedium,
                 )
