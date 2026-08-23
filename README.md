@@ -840,9 +840,6 @@ app/src/main/java/com/trustmesh/app/
 └── ui/                Compose screens · overlay · theme
 ```
 
-Further design notes in [`docs/`](docs/) — capability audit, call screening, notification monitoring,
-persistence, evidence correlation, caller reputation, risk intelligence and UI architecture.
-
 ---
 
 ## Licence
