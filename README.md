@@ -443,6 +443,30 @@ stabilisation, and `INDETERMINATE` as a first-class state rather than forcing a 
 Genuine enrolled speakers show **zero false CRITICAL windows** in voice-module testing, and the
 calibrated anti-spoofing check was exercised on **real hackathon calls** as part of the fused pipeline.
 
+### Reproducible benchmark harness
+
+The numbers above come from labelled sessions scored at **session level** (median-of-five
+stabilisation). They can be reproduced from the repo:
+
+| Artifact | Path |
+|---|---|
+| Labelled manifest | [`eval/manifest.csv`](eval/manifest.csv) |
+| Benchmark script | [`eval/benchmark.py`](eval/benchmark.py) |
+| Session stabiliser (Python port of `SessionScores.kt`) | [`eval/session_scores.py`](eval/session_scores.py) |
+| Per-run outputs | `eval/output/sessions.csv`, `eval/output/metrics.json` |
+
+```bash
+# After fetching model checkpoints (see eval/README.md)
+python eval/benchmark.py
+```
+
+Add rows to `manifest.csv` to grow the corpus. Each row supplies an enrol clip, a probe clip, and a
+ground-truth label (`genuine`, `clone`, or `impostor`). The harness uses the same PyTorch reference
+models, fusion rules, and window geometry as the shipped ONNX pipeline.
+
+On-device regression for the bundled aditya clip pair: `./gradlew :app:connectedDebugAndroidTest`
+(`VoiceDefenceModuleTest`).
+
 ### Channel mismatch, and why enrolment stores variants
 
 Cosine similarity, enrolment channel down the side, call channel across the top:

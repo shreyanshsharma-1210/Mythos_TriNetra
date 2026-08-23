@@ -1,0 +1,3 @@
+session_id,enrol_audio,probe_audio,label,contact_name,source,notes
+aditya-genuine,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,regression,Enrolled speaker scored on genuine audio — expect SAFE
+aditya-clone,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,regression,AI clone of enrolled speaker — expect SUSPICIOUS or CRITICAL
