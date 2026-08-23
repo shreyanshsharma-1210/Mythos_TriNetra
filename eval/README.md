@@ -66,6 +66,10 @@ Accuracy/precision/recall in the root README were measured across labelled sessi
 
 Audio lives under `app/src/androidTest/assets/` (aditya pair) and `eval/datasets/voice/` (second speaker pair).
 
+For Capture Spike measurements, `UNRELIABLE` path frequency, Groq wire protocol, 5-minute correlation
+window, and generalisation limits, see **Technical FAQ** under
+[Field validation (IKIGAI 206)](../README.md#field-validation-ikigai-206) in the root README.
+
 ## Relationship to the app
 
 | Component | App | Benchmark |

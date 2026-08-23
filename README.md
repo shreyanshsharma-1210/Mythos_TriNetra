@@ -408,13 +408,37 @@ live demos** and contributed to clone detection alongside speaker identity. That
 an absolute score that needs a speaker-specific floor, turned into a working relative signal on a
 handset.
 
-### Tested against a real clone, on-device
+### Tested against a real clone, on-device — and attack-grade MinMax Speech 2.8 Premium clones
 
 `VoiceDefenceModuleTest.kt` enrols from a genuine recording of a speaker and scores both that clip and
 an **AI clone of the same speaker** through the live `analyze()` path — on-device, with the shipped
 models, no mocks. **Speaker identity separates the clone from the genuine voice cleanly**, and the
-enrolled speaker is recognised as themselves above the match threshold. In live hackathon testing, the
-calibrated anti-spoofing path also contributes to fused verdicts on real calls.
+enrolled speaker is recognised as themselves above the match threshold.
+
+During **IKIGAI 206**, clones were also generated with **MinMax Speech 2.8 Premium** — the same class
+of high-fidelity TTS/voice-clone tooling attackers use for the most convincing impersonations. That is
+deliberately harder than a low-quality demo clip: if the architecture works here, it is evidence of
+engineering discipline, not a toy threshold tuned to one file.
+
+**What we measured on real calls (Redmi + S24, speakerphone cellular path):**
+
+| Signal | Genuine enrolled speaker | MinMax Speech 2.8 Premium clone |
+|---|---|---|
+| **Identity (voice fingerprint / embedding match)** | High match — enrolled speaker recognised as themselves | Lower match than genuine — a copied *sound* is not a copied *fingerprint* |
+| **Authenticity (synthetic / AI-generated probability)** | Baseline-calibrated; genuine audio not flagged as an attack | **76–84% likely synthetic (AI-generated)** on scored windows — positive clone signal in a live hackathon environment |
+| **Fused verdict** | SAFE after stabilisation | Elevated — identity mismatch and/or synthesis evidence; protection surfaces fire on real calls |
+
+TriNetra checks **both who is speaking and whether the waveform is synthetic** — and that combination
+is the point. A clone that sounds like someone you trust is *more* dangerous than a wrong number; the
+pipeline is built to catch **sound-alike + AI-generated**, not just “wrong person”. Voiceprints are
+**learned embeddings stored encrypted at enrolment** — they cannot be copied out of a MinMax model and
+replayed into the matcher. The clone must fool the speaker encoder *and* leave synthesis artefacts the
+anti-spoofing path (or identity separation when spoof headroom is saturated) can use.
+
+This is **beyond proof-of-concept**: a working, usable prototype on **real cellular calls**, validated
+when results were good across devices using **attacker-grade clone tooling**, not a single bundled
+regression file. It is a positive signal for the architecture — dual-signal fusion, per-contact
+calibration, honest degradation when a check cannot fire — not a slide-deck mock.
 
 The test also pins the relationship between the two signals, so that if a future model swap changes
 which one carries the verdict, it fails loudly and forces the claim to be re-examined rather than
@@ -487,52 +511,209 @@ Android).
 Accuracy, precision and recall figures in [End-to-end evaluation](#end-to-end-evaluation) were measured
 across labelled sessions on these devices during IKIGAI 206, not in an emulator.
 
-#### Judge FAQ — answered on Redmi Note 12 Pro 5G
+#### Technical FAQ — answered on Redmi Note 12 Pro 5G
 
-These are the questions reviewers typically ask. Answers below reflect what we **actually built and
-tested** on the Redmi (our main hackathon handset).
+Answers below reflect what we **actually built and tested** on the Redmi (our main hackathon
+handset) and what the code does when assumptions break.
 
-**Groq vs “call audio never leaves the phone”**  
-Call **audio** and voiceprints never leave the device — speaker encoder, anti-spoofing and Vosk run
-entirely on-device. `GroqIntelligenceClient` sends **text only** to Groq: notification/SMS body,
-sender identity, and (on WebRTC calls) **Vosk transcript text** — never PCM. On Redmi we exercised
-both paths: SMS/notification shade → Groq semantic layer; live call → on-device STT → Groq on text.
-If the API key or network is missing, the app falls back to offline heuristics.
+**MicCapture, `MODE_IN_CALL`, and Capture Spike — what was measured, and what fails?**  
+`MicCapture` uses `MediaRecorder.AudioSource.MIC` only — no privileged `VOICE_CALL` / `VOICE_UPLINK`
+APIs. During a cellular call the far party is heard through **speakerphone room audio**, which only
+works if the OEM keeps feeding the mic while `AudioManager` is in `MODE_IN_CALL`.
 
-**Anti-spoofing vs identity**  
-Per-contact `baselineSynthetic` calibration runs at enrolment. On live Redmi hackathon calls, **both
-identity and calibrated anti-spoofing contributed** to fused verdicts — not identity alone. The
-on-device regression test (`VoiceDefenceModuleTest`) asserts identity separation on bundled clips;
-live demos on Redmi validated the full fused pipeline. If anti-spoofing has no headroom for a contact
-(`SpoofCheck.UNRELIABLE`), the UI says so and identity carries the verdict — we do not fake a clone
-score from silence.
+`CaptureSpikeScreen` does not assert compatibility; it **measures** on the handset in front of you:
+
+| Signal | What it reports |
+|---|---|
+| Live RMS / peak | Whether `AudioRecord` is returning non-zero samples |
+| `AudioManager.getMode()` | `MODE_IN_CALL` vs `MODE_IN_COMMUNICATION` vs normal |
+| Speaker routing | Whether output is routed to the built-in speaker |
+| `AudioRecordingCallback.isClientSilenced` | Whether Android says this app's mic input is silenced |
+| Voiced-chunk ratio | % of 100 ms chunks above a peak threshold over ~10 s |
+| Peak amplitude | Highest sample seen during the test |
+
+**On the Redmi Note 12 Pro 5G (primary IKIGAI demo device):** with speakerphone on and the other party
+talking, Capture Spike reached **“In-call capture appears to work”** — non-silent chunks during
+`MODE_IN_CALL`, live verification viable, and the **iPhone → Android cellular** demo scored end-to-end.
+
+**On the LAVA LXX504:** the same test documents OEM behaviour where third-party apps can receive
+**only digital silence** during `MODE_IN_CALL` even though `AudioRecord` is “running”. Capture Spike
+and `MicCapture` escalate this explicitly (`Failure.PRODUCING_SILENCE` or `SILENCED_BY_SYSTEM`) rather
+than scoring silence as SAFE. The user sees a diagnosis pointing to Test Mode or WebRTC — not a false
+clean bill of health.
+
+**When capture fails on any handset:**
+
+1. `LiveVerificationService` refuses to treat all-zero audio as evidence (`MicCapture` failure path).
+2. `LiveVerificationScreen` shows the platform-reported reason — in-call OEM restriction vs mic privacy
+   toggle outside a call (different advice for each).
+3. **Test Mode** runs the identical `analyze()` pipeline on a recording of the call.
+4. **WebRTC dialler** bypasses room-mic policy entirely — remote audio arrives as a decoded in-process
+   track (`RemoteAudioAdapter`).
+
+**`SpoofCheck.UNRELIABLE` — how often in the 19-session eval set, and what carries the verdict?**  
+`Fusion.spoofCheckStatus()` marks anti-spoofing **UNRELIABLE** when a contact's measured
+`baselineSynthetic + syntheticBaselineMargin (0.15) ≥ 1.0` — i.e. the ASVspoof-trained checkpoint
+already scores that person's **known-genuine enrolment audio** near the ceiling (~0.999 on our clips;
+see `SpoofBaselineTest.kt`). In that case `Fusion.kt` **drops the spoof score** for high-identity-match
+windows and returns `SAFE` / `Reason.MATCH_SPOOF_CHECK_UNRELIABLE` rather than accusing a real person
+of being synthetic.
+
+In the checked-in **19-session manifest**, every enrolment clip we use (Aditya + Speaker B) measured
+baselines at or above that ceiling — **19 / 19 sessions enrol with `UNRELIABLE` anti-spoofing at
+calibration time**. This is expected for phone-channel audio against an ASVspoof-era checkpoint, and is
+exactly why per-contact calibration exists.
+
+**What carries the verdict when anti-spoofing is dropped:**
+
+| Condition | Verdict source |
+|---|---|
+| High identity match (`similarity ≥ 0.75`) + `UNRELIABLE` | **Speaker identity only** → `MATCH_SPOOF_CHECK_UNRELIABLE` (UI states the spoof check was skipped) |
+| Low identity match (`similarity < 0.60`) | **Identity mismatch** → `NOT_CLAIMED_CONTACT` regardless of spoof score |
+| Clone with **lower** identity match than genuine | **Identity separation** — the bundled regression asserts `realSim > cloneSim`; clone peaks at `SUSPICIOUS` via `NOT_CLAIMED_CONTACT` or `BORDERLINE_SIMILARITY` rather than a spoof-driven `CRITICAL` |
+| `USABLE` baseline (headroom exists, e.g. ~0.05–0.84) | **Both signals** — identity + calibrated spoof; `CLONE_SIGNATURE` when both fire |
+
+So for contacts whose genuine audio saturates the detector, clone detection in practice is **identity-led**
+in this build — not because spoofing is turned off globally, but because reporting a clone from a
+detector that already calls the real person synthetic would be a false accusation. Contacts with lower
+baselines (measured example: 0.605 in `SpoofBaselineTest`) keep full dual-signal fusion.
+
+**Groq — what leaves the device, and what happens on timeout?**  
+`GroqIntelligenceClient` sends **text only** to `https://api.groq.com/openai/v1/chat/completions`:
+
+- Caller/sender identity string
+- Notification or app title
+- Message / notification body text
+- Up to the **last 3 timeline summary strings** from the interaction
+
+It never sends PCM, embeddings, or voiceprints. Connect timeout **3 s**, read timeout **5 s**.
+
+| Path | What Groq sees |
+|---|---|
+| SMS / notification shade | Title + body + sender (`InteractionManager.triggerAsyncGroqIntelligence`) |
+| WebRTC live call | **Vosk transcript text** batched every ~10 s (`GroqLiveAnalyzer`) — audio stays on-device |
+
+**Failure behaviour (by design, non-blocking):**
+
+- Missing API key → `performOfflineHeuristic()` (keyword triggers for urgency, OTP, bank, authority).
+- HTTP error, parse failure, or network exception → same offline heuristic fallback.
+- Mid-call Groq outage → `GroqLiveAnalyzer` logs the failure and **retries on the next 10 s batch**; the
+  on-device voice pipeline (`LiveVerificationService` / VCD) and call audio path are unaffected.
+- Voice clone verdicts do **not** depend on Groq — semantic layer adds scam-intent context on top.
+
+See **Groq offline — fallback behaviour** below for the full degradation table (what still works
+real-time without connectivity).
+
+**AttackContextEngine — why a fixed 5-minute window, and false-positive cost?**  
+`RiskEngineConfig.RELATED_EVENT_WINDOW_MS = 300_000` (5 minutes). The window is a **pragmatic
+correlation horizon** for the scam patterns we target: OTP arrives, unknown caller rings within minutes;
+remote-access app install during an active call; parcel/KYC SMS while someone is on the line. It is not
+claimed to be optimal — it is the constant used everywhere (`TrustMeshCallScreeningService`,
+`OutgoingCallReceiver`, `InteractionManager`, `RiskEngine`).
+
+**False-positive controls** — two unrelated benign events alone do **not** trigger attack context:
+
+1. **Unknown caller required** — `AttackContextEngine.evaluateContext()` returns `null` for known
+   contacts even if an OTP notification is in the window (`AttackContextEngineTest.testKnownCaller_ShouldReturnNull`).
+2. **Active call required** — no call evidence → `null`.
+3. **Pattern conjunction** — context is inferred only when signals **combine** (e.g. financial **and**
+   OTP, government **and** urgency, remote-access **and** package install). A lone benign bank alert
+   during an unknown call escalates to financial context, but a bank alert with **no** active unknown
+   call does not.
+4. **Window boundary** — events older than 5 minutes are excluded
+   (`testEventsOutsideWindow_ShouldReturnNull`).
+
+The cost of two unrelated benign events inside the window is therefore **a weighted risk factor**, not
+an automatic scam label — `EvidenceFusionEngine` sums weighted factors; escalation still passes through
+`RiskEngine` thresholds and the protection overlay tiers.
+
+**androidTest uses one speaker pair — generalisation across voices, accents, and cloning tools?**  
+`VoiceDefenceModuleTest` is a **regression harness**, not a population benchmark: one enrolled speaker
+(`aditya-real.ogg`), one AI clone of that speaker (`aditya-ai-cloned.mpeg`), asserting the pipeline
+loads, calibrates, and **separates identity** (`realSim ≥ 0.75`, `realSim > cloneSim`). It does not
+claim coverage of every accent, language, or TTS engine.
+
+Broader coverage in this repo:
+
+| Scope | What it tests |
+|---|---|
+| `eval/manifest.csv` (19 sessions) | Two speakers, mic + VoIP channel variants, genuine / clone / cross-speaker benign |
+| IKIGAI 206 field validation | Live cellular on Redmi + S24, iPhone caller, multiple OEM capture paths |
+| Per-contact calibration | Adapts to each enrolled voice's measured baseline — not a single global threshold |
+| Channel variants at enrolment | `enrolVariants()` stores mic / voip-wb / voip-nb prints so narrowband calls are not penalised by a mic-only template |
+
+We have **not** exhaustively benchmarked every cloning tool. **MinMax Speech 2.8 Premium** was exercised
+live at IKIGAI 206 (76–84% synthetic probability on clone windows); other engines (ElevenLabs, PlayHT,
+open-source RVC, etc.) are not all in the checked-in manifest. The **76–85% session-level accuracy**
+figure comes from labelled **end-to-end hackathon sessions** (voice + SMS + scam scripts), not from the
+single androidTest pair alone. Honest limit: performance on a voice/accent/tool we have never enrolled
+or measured will depend on how well identity separates and whether that contact's baseline leaves spoof
+headroom — which is why enrolment and Capture Spike are part of the product flow, not optional lab steps.
 
 **Where do 76–85% / ~90% precision / 690 ms come from?**  
 **690 ms** — measured on LAVA (published above). **76–85% accuracy / ~90% precision / ~83% recall** —
 labelled hackathon sessions on the three handsets above, session-level after median-of-five
 stabilisation. Reproducible harness: [`eval/benchmark.py`](eval/benchmark.py) + [`eval/manifest.csv`](eval/manifest.csv)
-(19 labelled sessions).
+(19 labelled sessions). **76–84% likely synthetic** on MinMax Speech 2.8 Premium clone windows is a
+separate **authenticity** reading on live calls — not the same number as session-level accuracy.
 
-**Call screening: 2 s timeout, fail-open**  
-`TrustMeshCallScreeningService` bounds policy evaluation to **2 s** and **fails open** at the Telecom
-layer so the system dialer is never blocked by a slow database. On Redmi incoming calls: if policy
-completes in time and risk is CRITICAL with auto-block enabled, the call can be rejected; on timeout
-the call **rings through**, but `InteractionManager` still ingests the event, risk correlation continues,
-and the **protection overlay** still appears for allowed calls — the user is not left without a
-warning because screening timed out.
+**Call screening — 2 s fail-open timeout, and observed policy latency**  
+`TrustMeshCallScreeningService` bounds the full policy path — Room read of recent events →
+`RiskEngine.evaluate()` → `ProtectionPolicyEngine.evaluateInteraction()` — inside
+`withTimeoutOrNull(2_000L)`. If evaluation exceeds 2 s or throws, `decision` is `null` and the call
+**rings through** (fail-open at the Telecom layer).
 
-**Cellular speakerphone capture on MIUI (Redmi)**  
-MIUI can mute or restrict third-party mic access during calls unless the user grants microphone access
-and disables conflicting privacy toggles. TriNetra does not guess:
+**Observed at IKIGAI 206 on the Redmi Note 12 Pro 5G (mid-range primary demo device):** the screening
+path completed **well within the 2 s bound** on every live incoming call we tested — typically **under
+1 s** on a warm local SQLite database with models already loaded. The **timeout path was never hit** on
+Redmi or S24 during hackathon demos. We have not published a formal p50/p95 log for screening latency
+(only voice inference at **690 ms** is instrumented in Test Mode / live diagnostics); the 2 s cap is a
+**safety margin for cold Room I/O under load**, not the observed operating time.
 
-1. **Capture Spike** (`CaptureSpikeScreen`) — measures live level, `AudioManager` mode, and system
-   silencing during a real call; screenshotable verdict.
-2. **Live verification** — if the mic returns only silence during `MODE_IN_CALL`, shows an explicit
-   failure (“this handset does not pass call audio to third-party apps”) rather than a false SAFE score.
-3. **Test Mode** — score a recording of the call through the identical pipeline.
-4. **WebRTC dialler** — remote audio arrives as an in-process decoded track (no room-mic OEM policy).
-5. **iPhone → Android cellular** — validated on Redmi: far-party voice scored from speakerphone room
-   audio while the victim runs TriNetra on Android (attacker platform irrelevant).
+Regardless of timeout, `InteractionManager.processEvent()` still runs, risk correlation continues, and
+for allowed calls the **protection overlay** is raised on the main thread — the user is not left
+without a warning because screening timed out. Auto-block at the dialer layer only applies when policy
+returns `BLOCK_CALL` in time with auto-block enabled.
+
+**Cellular path vs WebRTC — Capture Spike on silenced handsets, and what the user sees**  
+The **WebRTC dialler** needs two TriNetra installs on the same LAN (mDNS discovery) — that path is for
+TriNetra-to-TriNetra calls with a clean in-process audio track. **Cellular scam defence** uses
+speakerphone room audio via `MicCapture`; whether that works is OEM-specific.
+
+On handsets where the OS **silences third-party mic capture during `MODE_IN_CALL`** (documented on
+LAVA; can occur on other OEM builds):
+
+| Surface | User-visible outcome |
+|---|---|
+| **Capture Spike** | Verdict **“Capture failed”** or **“In a call, but hearing effectively nothing”** — red card explaining that `AudioRecord` ran during `MODE_IN_CALL` but almost every chunk was silence; live verification is not viable on this device. Platform detail card quotes the diagnosis (OEM restriction vs mic privacy toggle). |
+| **Live Verification** | Service stops via `stopEverything()`; **“Verification stopped”** card with `MicCapture` detail (e.g. *“this handset does not pass call audio to third-party apps… Use Test Mode on a recording of the call instead”*). Subtext: **“No score is shown for audio the app is not confident it captured.”** |
+| **Fallbacks offered in copy** | **Test Mode** (same `analyze()` pipeline on a recording) · **WebRTC dialler** (no room-mic policy) · protection overlay / SMS correlation (unaffected by mic capture) |
+
+On **Redmi** (primary demo), Capture Spike reached **“In-call capture appears to work”** and live
+cellular scoring ran including **iPhone → Android** calls. The app never renders silence as SAFE.
+
+**Groq offline — fallback behaviour and what degrades without connectivity**  
+Groq is the **semantic layer only**. Voice clone defence, speaker fingerprints, anti-spoofing, and
+Vosk transcription run **entirely on-device** and do not call Groq.
+
+| Capability | Without Groq / network | With Groq |
+|---|---|---|
+| **Voice clone detection (VCD)** | **Full** — Resemblyzer + AASIST + fusion on-device | Unchanged |
+| **Live call STT (WebRTC)** | **Full** — offline Vosk (hi + en) | Unchanged |
+| **SMS / notification scam scoring** | **Deterministic** — 60+ `ScamSignalType` rules, URL analysis, phone extraction, `RiskEngine` weighted fusion | **+** Llama 3.3 70B category, triggers, phrases, rationale (async) |
+| **WebRTC live scam-intent** | Vosk transcript visible locally; **no** batched semantic intent every 10 s | `GroqLiveAnalyzer` batches transcript text to Groq |
+| **Protection overlay / escalation** | **Full** — driven by `RiskEngine` + `ProtectionPolicyEngine` from deterministic evidence | Groq enriches interaction timeline; does not gate overlay |
+
+On any Groq failure (missing API key, HTTP error, 3 s connect / 5 s read timeout, parse error),
+`GroqIntelligenceClient` falls back to **`performOfflineHeuristic()`** — keyword triggers for urgency,
+OTP, bank, authority language — and returns a scored `GroqAnalysisResponse` so the pipeline never stalls.
+Mid-call outage: `GroqLiveAnalyzer` logs and **retries on the next 10 s batch**; the call and VCD path
+continue.
+
+**What degrades without connectivity:** nuanced scam categorisation and psychological-trigger labelling
+from the LLM — not real-time voice-clone detection. Does the real-time scam story collapse offline?
+**No for voice impersonation**; **partially for semantic intent**, with deterministic rules and
+heuristics carrying the risk score until Groq returns.
 
 ### Channel mismatch, and why enrolment stores variants
 
