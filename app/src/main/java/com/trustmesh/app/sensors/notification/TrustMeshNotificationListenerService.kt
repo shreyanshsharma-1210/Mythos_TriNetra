@@ -67,36 +67,13 @@ class TrustMeshNotificationListenerService : NotificationListenerService() {
             val category = sbn.notification?.category ?: ""
             Log.d(TAG, "Notification posted — package=$pkg category=$category")
 
-            // 1. Check for Stealth 6000/7000 Voice Fingerprint Signal Suppression
+            // 1. Check notification fields for routing (title, text, ticker, etc.)
             val notifTitle = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TITLE)?.toString() ?: ""
             val notifText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_TEXT)?.toString() ?: ""
             val tickerText = sbn.notification?.tickerText?.toString() ?: ""
             val subText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT)?.toString() ?: ""
             val summaryText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_SUMMARY_TEXT)?.toString() ?: ""
             val bigText = sbn.notification?.extras?.getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)?.toString() ?: ""
-
-            val combined = "$notifTitle $notifText $tickerText $subText $summaryText $bigText"
-
-            // 0. Check for Digital Arrest "2000" trigger in any incoming notification (SMS / Messages / WhatsApp)
-            if (com.trustmesh.app.core.digitalarrest.DigitalArrestController
-                    .handleIncomingSms(applicationContext, combined)
-            ) {
-                Log.i(TAG, "🛡 Digital Arrest trigger matched in notification listener — starting workflow & overlay")
-                return
-            }
-
-            if (com.trustmesh.app.core.voicescan.VoiceScanController.handleControlMessage(applicationContext, combined)) {
-                try {
-                    Log.i(TAG, "Stealth Mode: Silently suppressing 6000/7000 voice signal notification from $notifTitle (key=${sbn.key})")
-                    cancelNotification(sbn.key)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        cancelNotification(sbn.packageName, sbn.tag, sbn.id)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to cancel notification for key ${sbn.key}", e)
-                }
-                return
-            }
 
             val event = NotificationNormalizer.normalizeNotification(applicationContext, sbn)
             InteractionManager.processEvent(event)

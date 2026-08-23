@@ -26,12 +26,39 @@
 **Track** — GenAI
 **Problem statement** — Real-time scam and impersonation defence
 
-**Jump to** — [Why AI is essential](#why-ai-is-essential-here) · [Threat model](#threat-model) ·
-[Capability matrix](#capability-matrix) · [Evaluate in 5 minutes](#evaluate-this-in-five-minutes) ·
-[Architecture](#architecture) · [Measured, not asserted](#measured-not-asserted) ·
-[Field validation](#field-validation-ikigai-206) ·
+**Jump to** — [Screenshots](#screenshots) · [Why AI is essential](#why-ai-is-essential-here) ·
+[Threat model](#threat-model) · [Capability matrix](#capability-matrix) ·
+[Evaluate in 5 minutes](#evaluate-this-in-five-minutes) · [Architecture](#architecture) ·
+[Measured, not asserted](#measured-not-asserted) · [Field validation](#field-validation-ikigai-206) ·
 [Modules](#modules) · [Threat coverage](#threat-coverage) · [Technology choices](#technology-choices) ·
 [Build and run](#build-and-run)
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/onboarding1.jpeg" alt="Onboarding — welcome" width="180">
+  <img src="screenshots/onboarding2.jpeg" alt="Onboarding — threat context" width="180">
+  <img src="screenshots/onboarding3.jpeg" alt="Onboarding — voice defence" width="180">
+</p>
+<p align="center">
+  <img src="screenshots/onboarding4.jpeg" alt="Onboarding — permissions" width="180">
+  <img src="screenshots/onboarding5.jpeg" alt="Onboarding — enrolment" width="180">
+  <img src="screenshots/onboarding6.jpeg" alt="Onboarding — ready" width="180">
+</p>
+<p align="center">
+  <img src="screenshots/homepage.jpeg" alt="Home" width="180">
+  <img src="screenshots/voice_fingerprinting.jpg" alt="Voice fingerprinting" width="180">
+  <img src="screenshots/recent%20calls%20and%20their%20status.jpeg" alt="Recent calls and status" width="180">
+</p>
+
+| Screen | File |
+|---|---|
+| Onboarding (1–6) | [`screenshots/onboarding1.jpeg`](screenshots/onboarding1.jpeg) … [`onboarding6.jpeg`](screenshots/onboarding6.jpeg) |
+| Home | [`screenshots/homepage.jpeg`](screenshots/homepage.jpeg) |
+| Voice fingerprinting | [`screenshots/voice_fingerprinting.jpg`](screenshots/voice_fingerprinting.jpg) |
+| Recent calls and status | [`screenshots/recent calls and their status.jpeg`](screenshots/recent%20calls%20and%20their%20status.jpeg) |
 
 ---
 
@@ -983,11 +1010,11 @@ dependency for the parts that matter.
 | 2 | Voice tab → enrol a contact, ~60 s of speech, set a codeword | Enrolment measures that speaker's `baselineSynthetic` and stores channel variants |
 | 3 | Have that contact call you. **Put it on speakerphone** | Overlay appears at ring; voice scoring begins within seconds and updates every 3 s |
 | 4 | Play a cloned clip of the same speaker down the line instead | Identity separation drives the verdict away from a match; the reason is named on screen |
-| 5 | Send an SMS reading `2000` | Digital Arrest workflow: overlay, evidence capture with SHA-256, PDF report, trusted-contact alert |
+| 5 | Tools → Digital Arrest → **Simulate trigger** | Guided Digital Arrest workflow: overlay, evidence capture with SHA-256, PDF report, trusted-contact alert |
 | 6 | Send any SMS containing `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen |
 
-Offline the whole way except step 5's outbound SMS and the semantic layer — pull the network and voice
-verification, transcription, correlation and scoring all keep working.
+Offline the whole way except the optional outbound family-alert SMS and the semantic layer — pull the
+network and voice verification, transcription, correlation and scoring all keep working.
 
 For the WebRTC dialler specifically, two handsets on the same Wi-Fi are needed; everything above is
 single-device.
@@ -1053,8 +1080,11 @@ All values also read from the environment (`GROQ_API_KEY`, `TEXTBEE_API_KEY`, `T
 
 | SMS body | Effect |
 |---|---|
-| `2000` | Digital Arrest workflow — overlay, evidence capture, PDF report, trusted-contact alert. |
-| contains `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen. |
+| contains `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen |
+
+SMS bodies **`2000`**, **`6000`**, and **`7000`** do **not** trigger risk elevation or clone flags —
+those former demo control codes were removed so scoring comes only from on-device voice analysis and
+the deterministic risk pipeline.
 
 ---
 

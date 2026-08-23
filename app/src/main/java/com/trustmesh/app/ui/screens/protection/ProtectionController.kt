@@ -192,7 +192,6 @@ object ProtectionController {
             callSessionStartedAtMs = System.currentTimeMillis()
             RiskEngine.resetForNewCall()
             VoiceScanController.resetForNewCall()
-            maybeStartScanFromCaller(context, callerName, callerNumber)
         }
         if (initialState == CallOverlayState.SUMMARY) {
             hasShownSummary = true
@@ -471,24 +470,6 @@ object ProtectionController {
             Log.d(TAG, "WindowParams updated for state=$state riskLevel=$riskLevel")
         } catch (e: Exception) {
             Log.e(TAG, "updateViewLayout failed — non-fatal", e)
-        }
-    }
-
-    /**
-     * Starts a voice-analysis run when the caller themselves carries a control code.
-     *
-     * Kept alongside the SMS trigger because a demo line dialling in from a number containing the
-     * code should behave the same as the code arriving by message — the run is about the audio on
-     * the call either way.
-     */
-    private fun maybeStartScanFromCaller(context: Context, callerName: String, callerNumber: String) {
-        val blob = "$callerName $callerNumber"
-        when {
-            blob.contains(VoiceScanController.CODE_SYNTHETIC) ->
-                VoiceScanController.startSyntheticScan(context.applicationContext)
-
-            blob.contains(VoiceScanController.CODE_GENUINE) ->
-                VoiceScanController.startGenuineScan(context.applicationContext)
         }
     }
 

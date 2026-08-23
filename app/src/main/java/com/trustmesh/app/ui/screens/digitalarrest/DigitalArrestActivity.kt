@@ -15,7 +15,7 @@ import com.trustmesh.app.ui.theme.TrustMeshTheme
 private const val TAG = "DigitalArrestActivity"
 
 /**
- * Fullscreen high-priority Activity displayed when the "2000" Digital Arrest SMS trigger is received.
+ * Fullscreen high-priority Activity displayed when the Digital Arrest guided workflow starts.
  * Wakes up screen, shows over keyguard/lockscreen, triggers alarm audio/vibration,
  * and displays the animated workflow progress and critical dashboard.
  */

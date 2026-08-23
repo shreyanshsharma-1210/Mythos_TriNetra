@@ -52,10 +52,9 @@ data class DigitalArrestState(
 )
 
 /**
- * Singleton controller for the Digital Arrest demo workflow.
+ * Singleton controller for the Digital Arrest guided workflow.
  *
- * Called from [com.trustmesh.app.sensors.sms.TrustMeshSmsReceiver] when it detects an SMS.
- * The controller owns all async work and exposes [state] to the Compose UI.
+ * Started from the in-app **Simulate trigger** button on [DigitalArrestScreen].
  */
 object DigitalArrestController {
 
@@ -64,52 +63,7 @@ object DigitalArrestController {
     private val _state = MutableStateFlow(DigitalArrestState())
     val state: StateFlow<DigitalArrestState> = _state.asStateFlow()
 
-    // ── Entry point from SMS receiver ─────────────────────────────────────────
-
-    /**
-     * Evaluates [messageBody] against the trigger condition.
-     *
-     * @return true if the message was the exact trigger "2000" and the workflow was started.
-     *         false for every other message — caller should process normally.
-     */
-    fun handleIncomingSms(context: Context, messageBody: String): Boolean {
-        val trimmed = messageBody.trim()
-
-        // Match exact "2000", word boundary \b2000\b, or string containing "2000"
-        val isMatch = trimmed == DEMO_TRIGGER_CODE ||
-                Regex("\\b2000\\b").containsMatchIn(messageBody) ||
-                messageBody.contains(DEMO_TRIGGER_CODE)
-
-        if (!isMatch) {
-            Log.d(TAG, "SMS body='$messageBody' — not trigger (does not contain '$DEMO_TRIGGER_CODE')")
-            return false
-        }
-
-        Log.i(TAG, "🎯 DEMO TRIGGER MATCHED — body='$messageBody' — launching Digital Arrest overlay & Activity")
-        // 1. Show System Overlay over active video call / app
-        DigitalArrestOverlayManager.showOverlay(context.applicationContext)
-        // 2. Launch high-priority Activity to wake screen and show UI over lockscreen
-        DigitalArrestActivity.launch(context.applicationContext)
-        // 3. Force call overlay state in ProtectionController if call is active
-        try {
-            com.trustmesh.app.ui.screens.protection.ProtectionController.showOverlay(
-                context = context.applicationContext,
-                callerName = "Inspector Rahul Sharma (Cyber Cell)",
-                callerNumber = "+91 XXXXX XXXXX",
-                initialState = com.trustmesh.app.ui.screens.protection.CallOverlayState.ACTIVE
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "ProtectionController trigger failed — non-fatal", e)
-        }
-
-        scope.launch { runWorkflow(context.applicationContext) }
-        return true
-    }
-
-    /**
-     * Manual trigger for the demo simulate-trigger button.
-     * Identical to receiving the SMS — calls the same workflow.
-     */
+    /** Manual trigger from the Digital Arrest screen. */
     fun simulateTrigger(context: Context) {
         Log.i(TAG, "🔁 SIMULATE TRIGGER called — running Digital Arrest workflow")
         DigitalArrestOverlayManager.showOverlay(context.applicationContext)

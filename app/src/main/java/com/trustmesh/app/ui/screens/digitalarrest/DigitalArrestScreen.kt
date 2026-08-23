@@ -65,7 +65,7 @@ private fun DaIdleContent(context: Context, onBack: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text("DIGITAL ARREST PROTECTION", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = NavyDark, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
-        Text("Monitoring for trigger SMS \"2000\".\nSend that SMS to activate the full demo workflow.", fontSize = 13.sp, color = TextGray, textAlign = TextAlign.Center)
+        Text("Tap Simulate trigger below to run the guided Digital Arrest workflow.", fontSize = 13.sp, color = TextGray, textAlign = TextAlign.Center)
         Spacer(Modifier.height(32.dp))
         Button(
             onClick = { DigitalArrestController.simulateTrigger(context) },
