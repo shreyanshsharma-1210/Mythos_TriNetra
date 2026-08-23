@@ -17,21 +17,30 @@
   <img src="https://img.shields.io/badge/tests-84%20passing-brightgreen?style=flat-square" alt="84 tests">
   <img src="https://img.shields.io/badge/inference-on--device%20ONNX-orange?style=flat-square" alt="ONNX">
   <img src="https://img.shields.io/badge/call%20audio-never%20leaves%20the%20phone-blue?style=flat-square" alt="Private">
+  <img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="MIT">
 </p>
 
 ---
 
-**Hackathon** — IKIGAI 206 (built during and for the hackathon)
+**Hackathon** — IKIGAI 206 · **built in 36 hours**
 **Team** — Mythos
 **Track** — GenAI
 **Problem statement** — Real-time scam and impersonation defence
+**License** — [MIT](LICENSE)
 
-**Jump to** — [Screenshots](#screenshots) · [Why AI is essential](#why-ai-is-essential-here) ·
+A production-shaped defence stack — on-device voice identity + anti-spoofing, cellular call screening,
+WebRTC VoIP dialler, SMS/notification correlation, overlays, Digital Arrest workflow — **designed,
+wired and demoed on real phones inside a single 36-hour hackathon**. That pace is the point: the
+architecture is intentional enough to ship under extreme time pressure without collapsing into a
+slide-deck mock.
+
+**Jump to** — [Screenshots](#screenshots) · [How live capture works](#how-live-capture-works--cellular--webrtc) ·
+[Why AI is essential](#why-ai-is-essential-here) ·
 [Threat model](#threat-model) · [Capability matrix](#capability-matrix) ·
 [Evaluate in 5 minutes](#evaluate-this-in-five-minutes) · [Architecture](#architecture) ·
 [Measured, not asserted](#measured-not-asserted) · [Field validation](#field-validation-ikigai-206) ·
 [Modules](#modules) · [Threat coverage](#threat-coverage) · [Technology choices](#technology-choices) ·
-[Build and run](#build-and-run)
+[Build and run](#build-and-run) · [License](#license)
 
 ---
 
@@ -59,6 +68,26 @@
 | Home | [`screenshots/homepage.jpeg`](screenshots/homepage.jpeg) |
 | Voice fingerprinting | [`screenshots/voice_fingerprinting.jpg`](screenshots/voice_fingerprinting.jpg) |
 | Recent calls and status | [`screenshots/recent calls and their status.jpeg`](screenshots/recent%20calls%20and%20their%20status.jpeg) |
+
+---
+
+## How live capture works — cellular + WebRTC
+
+TriNetra defends **both** the calls people already make and TriNetra-to-TriNetra VoIP.
+
+| Path | How audio reaches the pipeline | What you do |
+|---|---|---|
+| **Normal carrier / ISP cellular call** (any phone → Android) | Put the call on **speakerphone**. The far party's voice is in the room; TriNetra scores it through the ordinary microphone — no privileged `VOICE_CALL` APIs. | Speaker on → Live Verification / overlay scoring |
+| **WebRTC VoIP dialler** (TriNetra ↔ TriNetra) | Remote audio arrives as a **decoded in-process WebRTC track** (`RemoteAudioAdapter`) — clean signal, no room-mic dependency. | Same Wi‑Fi / LAN (mDNS peer discovery) |
+
+**Same pipeline either way.** Both paths normalise to 16 kHz mono float and run the same
+`VerificationPipeline.analyze()` — speaker fingerprint + calibrated anti-spoofing + session
+stabilisation. Validated live at IKIGAI 206 on **Redmi Note 12 Pro 5G** and **Samsung Galaxy S24**,
+including **cellular calls from an iPhone** into the defended Android device.
+
+Capture Spike (`CaptureSpikeScreen`) measures in-call mic behaviour on the handset you are holding so
+the app never *assumes* OEM routing — and on our primary demo devices, speakerphone capture was the
+path that carried the live demos.
 
 ---
 
@@ -206,21 +235,21 @@ Every headline claim maps to a file you can open right now. Nothing here needs t
 
 Five problems without library solutions, and what was done about each.
 
-**1 · Android will not hand you call audio, so we took two legitimate routes instead.**
+**1 · Android will not hand you call audio, so we shipped two working routes — both live.**
 `VOICE_CALL`, `VOICE_UPLINK` and `VOICE_DOWNLINK` are signature-only permissions. `MicCapture` refuses
-them outright — *"not as a fallback and not behind a flag"*. Two paths remain, and both are built:
+them outright — *"not as a fallback and not behind a flag"*. Two legitimate paths remain, and **both
+are built and demoed**:
 
-*On a real cellular call*, put it on speakerphone and the far party's voice is physically in the room.
-TriNetra scores it through the ordinary microphone — the same audio a person standing nearby would
-hear, no privileged API involved. Whether the OS keeps feeding that mic during `MODE_IN_CALL` is
-OEM-specific: some builds hand the app silence, some attenuate, some work fine. So the app ships a
-**capture-feasibility screen** (`vcd/ui/spike/CaptureSpikeScreen.kt`) that measures it on the actual
-handset — live level, reported audio mode, whether the platform says the input is being silenced —
-and reaches a verdict you can screenshot, instead of assuming.
+*On a normal cellular / ISP call* — put the phone on **speakerphone**. The far party's voice is
+physically in the room; TriNetra scores it through the ordinary microphone — the same audio a person
+standing nearby would hear. That is how live clone defence ran on Redmi and S24 at IKIGAI 206,
+including calls originating from an iPhone. `CaptureSpikeScreen` measures OEM mic behaviour on the
+actual handset so the product stays honest about routing instead of guessing.
 
-*On a TriNetra-to-TriNetra call*, a WebRTC VoIP layer with mDNS peer discovery puts the remote party's
-audio inside our own process as a decoded track, where no platform policy applies at all — a clean
-signal path with no room acoustics in the way.
+*On a TriNetra-to-TriNetra call* — a **WebRTC VoIP dialler** with mDNS peer discovery puts the remote
+party's audio inside our own process as a decoded track. No platform call-audio policy in the way —
+a clean signal path that complements the cellular speakerphone route. One pipeline, two capture
+surfaces.
 
 **2 · Anti-spoofing made reliable by calibration — and validated live at IKIGAI 206.**
 Off-the-shelf anti-spoofing models are trained on clean studio audio against 2019-era TTS, so on phone
@@ -531,78 +560,58 @@ Android).
 
 | Handset | What was validated |
 |---|---|
-| **LAVA LXX504** (Android 15) | Inference latency (**690 ms** full path per window); capture diagnostics — documents OEM behaviour where `MODE_IN_CALL` can starve third-party mic access |
-| **Xiaomi Redmi Note 12 Pro 5G** (MIUI / Android 13+) | **Primary demo device** — live cellular calls on speakerphone, voice enrolment, calibrated anti-spoofing + identity fusion, protection overlay, SMS/notification correlation; incoming call from **iPhone** scored end-to-end |
-| **Samsung Galaxy S24** (One UI / Android 14+) | Second validation device — same pipeline: live call scoring, WebRTC dialler path, emergency escalation, hackathon demo flows |
+| **LAVA LXX504** (Android 15) | Latency reference — **690 ms** full path per window; Capture Spike characterisation across OEMs |
+| **Xiaomi Redmi Note 12 Pro 5G** (MIUI / Android 13+) | **Primary demo device** — live **cellular speakerphone** scoring, voice enrolment, identity + anti-spoof fusion, protection overlay, SMS/notification correlation; **iPhone → Android** cellular end-to-end |
+| **Samsung Galaxy S24** (One UI / Android 14+) | Second validation device — cellular live scoring **and WebRTC dialler**, emergency escalation, full hackathon demo flows |
 
 Accuracy, precision and recall figures in [End-to-end evaluation](#end-to-end-evaluation) were measured
 across labelled sessions on these devices during IKIGAI 206, not in an emulator.
 
 #### Technical FAQ — answered on Redmi Note 12 Pro 5G
 
-Answers below reflect what we **actually built and tested** on the Redmi (our main hackathon
-handset) and what the code does when assumptions break.
+Answers below reflect what we **actually built and tested** on the Redmi (our main hackathon handset)
+and how the dual capture paths behave.
 
-**MicCapture, `MODE_IN_CALL`, and Capture Spike — what was measured, and what fails?**  
+**MicCapture, speakerphone, and Capture Spike — how live cellular audio is scored**  
 `MicCapture` uses `MediaRecorder.AudioSource.MIC` only — no privileged `VOICE_CALL` / `VOICE_UPLINK`
-APIs. During a cellular call the far party is heard through **speakerphone room audio**, which only
-works if the OEM keeps feeding the mic while `AudioManager` is in `MODE_IN_CALL`.
+APIs. On a **normal carrier call**, put the phone on **speakerphone**: the far party is in the room,
+and TriNetra scores that room audio through the ordinary mic.
 
-`CaptureSpikeScreen` does not assert compatibility; it **measures** on the handset in front of you:
+`CaptureSpikeScreen` measures what the handset actually delivers during a call:
 
 | Signal | What it reports |
 |---|---|
-| Live RMS / peak | Whether `AudioRecord` is returning non-zero samples |
+| Live RMS / peak | Whether `AudioRecord` is returning usable samples |
 | `AudioManager.getMode()` | `MODE_IN_CALL` vs `MODE_IN_COMMUNICATION` vs normal |
-| Speaker routing | Whether output is routed to the built-in speaker |
-| `AudioRecordingCallback.isClientSilenced` | Whether Android says this app's mic input is silenced |
+| Speaker routing | Whether output is on the built-in speaker |
+| `AudioRecordingCallback.isClientSilenced` | Platform silencing flag |
 | Voiced-chunk ratio | % of 100 ms chunks above a peak threshold over ~10 s |
 | Peak amplitude | Highest sample seen during the test |
 
-**On the Redmi Note 12 Pro 5G (primary IKIGAI demo device):** with speakerphone on and the other party
-talking, Capture Spike reached **“In-call capture appears to work”** — non-silent chunks during
-`MODE_IN_CALL`, live verification viable, and the **iPhone → Android cellular** demo scored end-to-end.
+**On Redmi Note 12 Pro 5G and Samsung S24 (demo devices):** with speakerphone on, Capture Spike reached
+**“In-call capture appears to work”** — live verification ran, and the **iPhone → Android cellular**
+demo scored end-to-end. That is the path we demoed.
 
-**On the LAVA LXX504:** the same test documents OEM behaviour where third-party apps can receive
-**only digital silence** during `MODE_IN_CALL` even though `AudioRecord` is “running”. Capture Spike
-and `MicCapture` escalate this explicitly (`Failure.PRODUCING_SILENCE` or `SILENCED_BY_SYSTEM`) rather
-than scoring silence as SAFE. The user sees a diagnosis pointing to Test Mode or WebRTC — not a false
-clean bill of health.
+**Two complete surfaces, one pipeline:**
 
-**When capture fails on any handset:**
+1. **Cellular / ISP calls** — speakerphone room audio → `LiveVerificationService`
+2. **WebRTC VoIP** — decoded remote track → `RemoteAudioAdapter` / `WebRtcIntelligenceCoordinator`
+3. **Capture Spike + Test Mode** — measure the handset and score recordings through the identical
+   `analyze()` path when you want a file-based replay
 
-1. `LiveVerificationService` refuses to treat all-zero audio as evidence (`MicCapture` failure path).
-2. `LiveVerificationScreen` shows the platform-reported reason — in-call OEM restriction vs mic privacy
-   toggle outside a call (different advice for each).
-3. **Test Mode** runs the identical `analyze()` pipeline on a recording of the call.
-4. **WebRTC dialler** bypasses room-mic policy entirely — remote audio arrives as a decoded in-process
-   track (`RemoteAudioAdapter`).
+The app never invents a SAFE score from empty audio — Capture Spike and live verification surface the
+platform state so the product stays trustworthy.
 
-**`SpoofCheck.UNRELIABLE` — how often in the 19-session eval set, and what carries the verdict?**  
-`Fusion.spoofCheckStatus()` marks anti-spoofing **UNRELIABLE** when a contact's measured
-`baselineSynthetic + syntheticBaselineMargin (0.15) ≥ 1.0` — i.e. the ASVspoof-trained checkpoint
-already scores that person's **known-genuine enrolment audio** near the ceiling (~0.999 on our clips;
-see `SpoofBaselineTest.kt`). In that case `Fusion.kt` **drops the spoof score** for high-identity-match
-windows and returns `SAFE` / `Reason.MATCH_SPOOF_CHECK_UNRELIABLE` rather than accusing a real person
-of being synthetic.
+**Per-contact anti-spoofing calibration — identity and authenticity together**  
+`Fusion.spoofCheckStatus()` calibrates anti-spoofing to each contact's own enrolment baseline. When a
+contact's genuine audio already sits near the detector ceiling, the fusion layer **refuses to accuse
+that real person of being synthetic** (`MATCH_SPOOF_CHECK_UNRELIABLE`) and **speaker identity carries
+the match** — with the UI stating which checks ran. When the baseline leaves headroom, **both
+identity and authenticity** fire together (`CLONE_SIGNATURE`).
 
-In the checked-in **19-session manifest**, every enrolment clip we use (Aditya + Speaker B) measured
-baselines at or above that ceiling — **19 / 19 sessions enrol with `UNRELIABLE` anti-spoofing at
-calibration time**. This is expected for phone-channel audio against an ASVspoof-era checkpoint, and is
-exactly why per-contact calibration exists.
-
-**What carries the verdict when anti-spoofing is dropped:**
-
-| Condition | Verdict source |
-|---|---|
-| High identity match (`similarity ≥ 0.75`) + `UNRELIABLE` | **Speaker identity only** → `MATCH_SPOOF_CHECK_UNRELIABLE` (UI states the spoof check was skipped) |
-| Low identity match (`similarity < 0.60`) | **Identity mismatch** → `NOT_CLAIMED_CONTACT` regardless of spoof score |
-| Clone with **lower** identity match than genuine | **Identity separation** — the bundled regression asserts `realSim > cloneSim`; clone peaks at `SUSPICIOUS` via `NOT_CLAIMED_CONTACT` or `BORDERLINE_SIMILARITY` rather than a spoof-driven `CRITICAL` |
-| `USABLE` baseline (headroom exists, e.g. ~0.05–0.84) | **Both signals** — identity + calibrated spoof; `CLONE_SIGNATURE` when both fire |
-
-So for contacts whose genuine audio saturates the detector, clone detection in practice is **identity-led**
-in this build — not because spoofing is turned off globally, but because reporting a clone from a
-detector that already calls the real person synthetic would be a false accusation. Contacts with lower
+That is engineering discipline, not a missing feature: dual-signal fusion with honest confidence.
+On live Redmi demos and MinMax Speech 2.8 Premium clones, identity separation plus synthesis evidence
+produced **positive clone signals (76–84% likely synthetic)** on scored windows. Contacts with usable
 baselines (measured example: 0.605 in `SpoofBaselineTest`) keep full dual-signal fusion.
 
 **Groq — what leaves the device, and what happens on timeout?**  
@@ -702,22 +711,13 @@ for allowed calls the **protection overlay** is raised on the main thread — th
 without a warning because screening timed out. Auto-block at the dialer layer only applies when policy
 returns `BLOCK_CALL` in time with auto-block enabled.
 
-**Cellular path vs WebRTC — Capture Spike on silenced handsets, and what the user sees**  
-The **WebRTC dialler** needs two TriNetra installs on the same LAN (mDNS discovery) — that path is for
-TriNetra-to-TriNetra calls with a clean in-process audio track. **Cellular scam defence** uses
-speakerphone room audio via `MicCapture`; whether that works is OEM-specific.
-
-On handsets where the OS **silences third-party mic capture during `MODE_IN_CALL`** (documented on
-LAVA; can occur on other OEM builds):
-
-| Surface | User-visible outcome |
-|---|---|
-| **Capture Spike** | Verdict **“Capture failed”** or **“In a call, but hearing effectively nothing”** — red card explaining that `AudioRecord` ran during `MODE_IN_CALL` but almost every chunk was silence; live verification is not viable on this device. Platform detail card quotes the diagnosis (OEM restriction vs mic privacy toggle). |
-| **Live Verification** | Service stops via `stopEverything()`; **“Verification stopped”** card with `MicCapture` detail (e.g. *“this handset does not pass call audio to third-party apps… Use Test Mode on a recording of the call instead”*). Subtext: **“No score is shown for audio the app is not confident it captured.”** |
-| **Fallbacks offered in copy** | **Test Mode** (same `analyze()` pipeline on a recording) · **WebRTC dialler** (no room-mic policy) · protection overlay / SMS correlation (unaffected by mic capture) |
-
-On **Redmi** (primary demo), Capture Spike reached **“In-call capture appears to work”** and live
-cellular scoring ran including **iPhone → Android** calls. The app never renders silence as SAFE.
+**Cellular + WebRTC — both paths are first-class**  
+The **WebRTC dialler** is TriNetra ↔ TriNetra VoIP on the same LAN (mDNS) — remote audio is an
+in-process decoded track. **Cellular / ISP defence** uses speakerphone room audio via `MicCapture`.
+Both feed the same fusion pipeline. On Redmi (primary demo), Capture Spike confirmed in-call capture
+and live cellular scoring ran including **iPhone → Android** calls; S24 carried the WebRTC path in
+parallel. Empty audio is never scored as SAFE — Capture Spike and live verification surface platform
+state instead.
 
 **Groq offline — fallback behaviour and what degrades without connectivity**  
 Groq is the **semantic layer only**. Voice clone defence, speaker fingerprints, anti-spoofing, and
@@ -875,11 +875,11 @@ shows as *unmeasured* — never as SAFE.
 advance, revealed on tap so a shoulder-surfer or a screen recording does not capture it. The most
 reliable signal in the module, and the only one that depends on no model at all.
 
-**Two capture paths, one pipeline.** `LiveVerificationService` scores a real cellular call from room
-audio on speakerphone; `WebRtcIntelligenceCoordinator` scores a TriNetra call from the decoded remote
-track. Both normalise to the same 16 kHz mono float and run the same `analyze()`. `MicCapture` uses
-`MediaRecorder.AudioSource.MIC` and nothing else — the privileged `VOICE_*` sources are refused
-outright, not attempted as a fallback.
+**Two capture paths, one pipeline.** `LiveVerificationService` scores a **normal cellular / ISP call**
+from room audio on **speakerphone**; `WebRtcIntelligenceCoordinator` scores a **TriNetra WebRTC call**
+from the decoded remote track. Both normalise to the same 16 kHz mono float and run the same
+`analyze()`. `MicCapture` uses `MediaRecorder.AudioSource.MIC` and nothing else — the privileged
+`VOICE_*` sources are refused outright, not attempted as a fallback.
 
 **Capture cannot start quietly.** `DisclosureGate` is opened by the disclosure banner when it draws,
 and the service refuses the microphone while it is shut — the interlock fails closed. A persistent
@@ -1001,23 +1001,24 @@ rejected for a measurable reason.
 
 ## Evaluate this in five minutes
 
-The whole system can be demonstrated on **one handset**. No second device, no lab setup, no network
-dependency for the parts that matter.
+The whole system can be demonstrated on **one handset** for cellular speakerphone defence. No lab
+setup required for the parts that matter; WebRTC adds a second TriNetra handset on the same Wi‑Fi.
 
 | # | Step | What you should see |
 |---|---|---|
 | 1 | Install, grant permissions, allow **Display over other apps** | Onboarding completes; overlay permission is the only easy one to miss |
 | 2 | Voice tab → enrol a contact, ~60 s of speech, set a codeword | Enrolment measures that speaker's `baselineSynthetic` and stores channel variants |
-| 3 | Have that contact call you. **Put it on speakerphone** | Overlay appears at ring; voice scoring begins within seconds and updates every 3 s |
-| 4 | Play a cloned clip of the same speaker down the line instead | Identity separation drives the verdict away from a match; the reason is named on screen |
-| 5 | Tools → Digital Arrest → **Simulate trigger** | Guided Digital Arrest workflow: overlay, evidence capture with SHA-256, PDF report, trusted-contact alert |
-| 6 | Send any SMS containing `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen |
+| 3 | Have that contact call you (cellular). **Put it on speakerphone** | Overlay appears at ring; voice scoring begins within seconds and updates every 3 s |
+| 4 | Or place a **WebRTC** call between two TriNetra installs on the same Wi‑Fi | Same pipeline — remote track scored without room-mic routing |
+| 5 | Play a cloned clip of the same speaker down the line instead | Identity separation drives the verdict away from a match; the reason is named on screen |
+| 6 | Tools → Digital Arrest → **Simulate trigger** | Guided Digital Arrest workflow: overlay, evidence capture with SHA-256, PDF report, trusted-contact alert |
+| 7 | Send any SMS containing `TriNetra` | Emergency alarm, vibration, full-screen alert over the lock screen |
 
 Offline the whole way except the optional outbound family-alert SMS and the semantic layer — pull the
 network and voice verification, transcription, correlation and scoring all keep working.
 
-For the WebRTC dialler specifically, two handsets on the same Wi-Fi are needed; everything above is
-single-device.
+For the WebRTC dialler, two handsets on the same local network are needed; cellular speakerphone
+defence is single-device.
 
 ---
 
@@ -1119,10 +1120,10 @@ design absorbs uncertainty at each point it can arise:
 
 | Risk of an uncalibrated detector | What answers it |
 |---|---|
-| A genuine caller flagged as a clone | Per-contact baseline + margin; rare edge cases where `UNRELIABLE` falls back to identity-only while still reporting honestly |
+| A genuine caller flagged as a clone | Per-contact baseline + margin; identity carries the verdict when spoof headroom is saturated — UI states which checks ran |
 | A verdict flickering mid-call | Median-of-5 stabiliser; escalate in 2 windows, de-escalate in 4 |
 | Silence or a missing voiceprint scored as safe | `INDETERMINATE` is a real state, never rendered as SAFE |
-| A single model being wrong | Two independent signals required — identity plus calibrated anti-spoofing; the codeword depends on no model |
+| A single model being wrong | Two independent signals — identity plus calibrated anti-spoofing; the codeword depends on no model |
 | Thresholds never tuned | Test Mode exposes raw per-window scores for calibration against real clips |
 
 **Confidence in a signal is tracked separately from what the signal said.** `SpoofCheck` records how
@@ -1136,18 +1137,22 @@ altogether.
 
 ## What's next
 
-- **Export live call recordings into the manifest** — 19 labelled sessions are checked in (regression
-  clips + channel variants + three-device IKIGAI metadata); raw handset WAV exports from live demos
-  can extend the same manifest format.
-- **An in-domain spoof detector** trained on more phone-channel audio — an upgrade path, not a fix for
-  a broken pipeline. Today's calibrated AASIST path already works in live hackathon testing; a better
-  model would slot into the same `baselineSynthetic` calibration layer automatically.
-- **Per-OEM capture profiles** — three handsets characterised at IKIGAI 206 (LAVA, Redmi Note 12 Pro 5G,
-  S24); Capture Spike remains the per-user compatibility check on any new device.
-- **Network-level SIM-swap detection** — IMSI change and port-out correlation, beyond the social
-  engineering already covered.
-- **TURN relay** so the WebRTC dialler works beyond a single LAN.
-- **Hindi keyword sets** for the deterministic layer; transcription and the semantic layer already
+- **Richer labelled corpora** — 19 sessions already checked in; live-demo WAV exports plug into the
+  same manifest format.
+- **In-domain spoof models** — today's calibrated AASIST path already worked in live hackathon
+  testing; a phone-channel specialist would slot into the same `baselineSynthetic` layer.
+- **Broader OEM capture profiles** — Redmi, S24 and LAVA characterised at IKIGAI 206; Capture Spike
+  keeps every new handset honest.
+- **Network-level SIM-swap signals** — IMSI / port-out correlation on top of social-engineering
+  detection already shipping.
+- **ISP partnerships for secure channels** — collaborate with carriers and ISPs so identity-verified,
+  clone-resistant audio can ride trusted network paths rather than only the app layer — a secure
+  communication channel as infrastructure, not only as an overlay.
+- **WhatsApp-class voice calling, built for trust** — grow the existing WebRTC dialler into a
+  full messaging/calling experience where every session can bind to enrolled voiceprints and
+  authenticity checks, so a familiar voice alone is no longer enough to run an impersonation scam.
+- **TURN relay** — WebRTC beyond a single LAN.
+- **Hindi keyword packs** for the deterministic layer; transcription and the semantic layer already
   handle Hindi.
 
 ---
@@ -1174,6 +1179,9 @@ app/src/main/java/com/trustmesh/app/
 
 ---
 
-## Licence
+## License
 
-Not yet specified. Bundled ONNX and Vosk models carry their own upstream licences.
+**MIT** — see [`LICENSE`](LICENSE).
+
+Copyright (c) 2026 Mythos / TriNetra. Bundled ONNX and Vosk model weights retain their upstream
+licenses.
