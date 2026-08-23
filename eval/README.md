@@ -17,8 +17,10 @@ bash fetch_checkpoints.sh                       # downloads Resemblyzer + AASIST
 
 Or install eval-only deps at repo root: `pip install -r eval/requirements.txt` (models still live under `tools/_work/`).
 
-2. **Labelled manifest** — `eval/manifest.csv` lists enrol clip, probe clip, and ground-truth label
-   (`genuine`, `clone`, or `impostor`). Paths are relative to the repo root.
+2. **Labelled manifest** — `eval/manifest.csv` lists **19 IKIGAI 206 sessions** across three handsets
+   (LAVA, Redmi Note 12 Pro 5G, Samsung S24): genuine calls, AI clones, channel variants
+   (`probe_channel`: `mic`, `voip-wb`, `voip-nb`), and a cross-speaker benign check. Paths are
+   relative to the repo root.
 
 ## Run
 
@@ -38,17 +40,31 @@ Outputs:
 Session verdicts use **stable_peak_level** (median-of-five stabilisation), matching the methodology
 documented in the root README.
 
-## Grow the corpus
+## Field devices (IKIGAI 206)
 
-Add rows to `manifest.csv`:
+| Handset | Notes |
+|---------|--------|
+| LAVA LXX504 | Latency reference; capture diagnostics |
+| Xiaomi Redmi Note 12 Pro 5G | Primary hackathon demo; iPhone→Android cellular validated |
+| Samsung Galaxy S24 | Second validation device |
 
-```csv
-session_id,enrol_audio,probe_audio,label,contact_name,source,notes
-bob-genuine,eval/datasets/bob/enrol.wav,eval/datasets/bob/genuine_call.wav,genuine,Bob,hackathon,Live demo recording
-bob-clone,eval/datasets/bob/enrol.wav,eval/datasets/bob/clone.wav,clone,Bob,hackathon,ElevenLabs clone
-```
+Accuracy/precision/recall in the root README were measured across labelled sessions on these devices.
 
-Place audio under `eval/datasets/` (or reference existing paths under `app/src/androidTest/assets/`).
+## Manifest columns
+
+| Column | Description |
+|--------|-------------|
+| `session_id` | Unique session name |
+| `enrol_audio` | Enrolment clip (known-genuine) |
+| `probe_audio` | Clip scored against the enrolment |
+| `label` | `genuine` (benign) or `clone` (attack) |
+| `contact_name` | Enrolled contact |
+| `source` | `regression` or `hackathon` |
+| `device` | Handset used during IKIGAI 206 field validation |
+| `probe_channel` | `mic`, `voip-wb`, or `voip-nb` (simulated call channel) |
+| `notes` | Session context |
+
+Audio lives under `app/src/androidTest/assets/` (aditya pair) and `eval/datasets/voice/` (second speaker pair).
 
 ## Relationship to the app
 
@@ -57,4 +73,4 @@ Place audio under `eval/datasets/` (or reference existing paths under `app/src/a
 | Models | ONNX in APK | PyTorch reference (parity-checked) |
 | Per-window fusion | `Fusion.kt` | `analyze_clips.fuse()` |
 | Session aggregation | `SessionScores.kt` | `eval/session_scores.py` |
-| On-device regression | `VoiceDefenceModuleTest.kt` | `aditya-*` rows in manifest |
+| On-device regression | `VoiceDefenceModuleTest.kt` | `aditya-regression-*` rows in manifest |

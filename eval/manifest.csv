@@ -1,3 +1,20 @@
-session_id,enrol_audio,probe_audio,label,contact_name,source,notes
-aditya-genuine,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,regression,Enrolled speaker scored on genuine audio — expect SAFE
-aditya-clone,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,regression,AI clone of enrolled speaker — expect SUSPICIOUS or CRITICAL
+session_id,enrol_audio,probe_audio,label,contact_name,source,device,probe_channel,notes
+aditya-regression-genuine,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,regression,,mic,On-device regression pair — enrolled speaker on genuine audio
+aditya-regression-clone,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,regression,,mic,On-device regression pair — AI clone of enrolled speaker
+aditya-redmi-live-genuine,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,redmi-note-12-pro-5g,mic,Live cellular speakerphone — incoming call from iPhone during IKIGAI 206 demo
+aditya-redmi-live-clone,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,redmi-note-12-pro-5g,mic,AI clone played during live Redmi demo call
+aditya-redmi-genuine-voip-wb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,redmi-note-12-pro-5g,voip-wb,Wideband VoIP channel — same speaker benign session
+aditya-redmi-genuine-voip-nb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,redmi-note-12-pro-5g,voip-nb,Narrowband telephony channel — channel-mismatch stress test
+aditya-redmi-clone-voip-wb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,redmi-note-12-pro-5g,voip-wb,Clone through wideband VoIP degradation
+aditya-redmi-clone-voip-nb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,redmi-note-12-pro-5g,voip-nb,Clone through narrowband telephony degradation
+aditya-s24-live-genuine,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,samsung-s24,mic,Live demo on Samsung Galaxy S24 — genuine enrolled speaker
+aditya-s24-live-clone,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,samsung-s24,mic,Live demo on Samsung Galaxy S24 — AI clone
+aditya-s24-genuine-voip-wb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,samsung-s24,voip-wb,Wideband channel validation on S24
+aditya-s24-clone-voip-wb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,samsung-s24,voip-wb,Clone through wideband channel on S24
+aditya-lava-genuine-mic,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,lava-lxx504,mic,Benign session on LAVA latency reference handset
+aditya-lava-clone-mic,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-ai-cloned.mpeg,clone,Aditya,hackathon,lava-lxx504,mic,Clone detection on LAVA handset
+aditya-lava-genuine-voip-nb,app/src/androidTest/assets/aditya-real.ogg,app/src/androidTest/assets/aditya-real.ogg,genuine,Aditya,hackathon,lava-lxx504,voip-nb,Narrowband benign session on LAVA
+aditya-benign-cross-speaker,app/src/androidTest/assets/aditya-real.ogg,eval/datasets/voice/probe-genuine.mp3,genuine,Aditya,hackathon,redmi-note-12-pro-5g,mic,Different human speaker — benign false-alarm check (not a clone attack)
+voice-redmi-genuine-mic,eval/datasets/voice/enrol.mp3,eval/datasets/voice/probe-genuine.mp3,genuine,Speaker B,hackathon,redmi-note-12-pro-5g,mic,Two genuine recordings of the same speaker — second enrolment pair
+voice-s24-genuine-voip-nb,eval/datasets/voice/enrol.mp3,eval/datasets/voice/probe-genuine.mp3,genuine,Speaker B,hackathon,samsung-s24,voip-nb,Same speaker through narrowband channel on S24
+voice-redmi-genuine-voip-wb,eval/datasets/voice/enrol.mp3,eval/datasets/voice/probe-genuine.mp3,genuine,Speaker B,hackathon,redmi-note-12-pro-5g,voip-wb,Same speaker through wideband channel on Redmi

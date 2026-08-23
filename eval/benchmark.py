@@ -10,8 +10,8 @@ Usage (from repo root, after model checkpoints are fetched — see eval/README.m
     python eval/benchmark.py
     python eval/benchmark.py --manifest eval/manifest.csv --out eval/output
 
-Add rows to manifest.csv to grow the labelled corpus. Each row needs enrol_audio, probe_audio,
-and label: genuine | clone | impostor.
+Each manifest row needs enrol_audio, probe_audio, and label (genuine | clone | impostor).
+Optional probe_channel: mic | voip-wb | voip-nb (default mic).
 """
 
 from __future__ import annotations
@@ -44,6 +44,12 @@ CHANNELS = [
     ("voip-wb", channel_voip_wideband),
     ("voip-nb", channel_voip_narrowband),
 ]
+CHANNEL_BY_NAME = dict(CHANNELS)
+
+
+def apply_probe_channel(wav: np.ndarray, channel: str) -> np.ndarray:
+    fn = CHANNEL_BY_NAME.get(channel.strip().lower(), channel_mic)
+    return fn(wav.copy(), M.SAMPLE_RATE)
 
 POSITIVE_LABELS = {"clone", "impostor", "attack", "scam"}
 NEGATIVE_LABELS = {"genuine", "benign", "safe"}
@@ -253,6 +259,8 @@ def main() -> int:
 
         enrol_wav = ac.load_16k(enrol)
         probe_wav = ac.load_16k(probe)
+        probe_channel = (row.get("probe_channel") or "mic").strip().lower()
+        probe_wav = apply_probe_channel(probe_wav, probe_channel)
         voiceprints = enrol_variants(encoder, detector, enrol_wav)
         session = score_session(
             encoder,
